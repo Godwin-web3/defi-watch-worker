@@ -8,6 +8,9 @@
 		"start": "wrangler dev --test-scheduled",
 		"cf-typegen": "wrangler types"
 	},
+	"dependencies": {
+		"ethers": "^6.13.5"
+	},
 	"devDependencies": {
 		"typescript": "^5.5.2",
 		"wrangler": "^3.101.0"
