@@ -25,7 +25,7 @@ export default {
   async run(env: Env) {
     const provider = new JsonRpcProvider(env.RPC_URL || 'https://ethereum.publicnode.com');
     const currentBlock = await provider.getBlockNumber();
-    const fromBlock = currentBlock - 10;
+    const fromBlock = currentBlock - 100;
 
     const alerts: any[] = [];
 
