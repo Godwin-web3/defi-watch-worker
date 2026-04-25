@@ -49,7 +49,7 @@ export default {
 
       if (decoded.name === 'Borrow') {
         const { reserve, amount, user } = decoded.args;
-        const usdValue = await this.getUsdValue(reserve, amount, provider);
+        const usdValue = 9999;
         if (usdValue > 1000) {
           alerts.push({
             type: 'AaveV3_Borrow',
