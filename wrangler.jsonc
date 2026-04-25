@@ -5,6 +5,12 @@
   "observability": {
     "enabled": true
   },
+  "kv_namespaces": [
+    {
+      "binding": "DEFI_WATCH_KV",
+      "id": "4fd537fdac5443c4afb9348a903ac592"
+    }
+  ],
   "triggers": {
     "crons": [
       "* * * * *"

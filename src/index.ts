@@ -8,6 +8,7 @@ interface Env {
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_CHAT_ID: string;
   RPC_URL: string;
+  DEFI_WATCH_KV: KVNamespace;
 }
 
 const AAVE_V3_POOL = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
@@ -114,7 +115,35 @@ async function sendTelegram(alert: any, env: Env) {
 async function run(env: Env) {
   const provider = new JsonRpcProvider(env.RPC_URL || 'https://ethereum.publicnode.com');
   const currentBlock = await provider.getBlockNumber();
-  const fromBlock = currentBlock - 100;
+  
+  // Retrieve the last processed block from KV
+  let fromBlock: number;
+  const lastBlockStr = await env.DEFI_WATCH_KV.get('last_processed_block');
+  
+  if (lastBlockStr) {
+    fromBlock = parseInt(lastBlockStr) + 1;
+  } else {
+    // Default to scanning the last 10 blocks if no record exists
+    fromBlock = currentBlock - 10;
+  }
+
+  // If fromBlock is greater than currentBlock, we've already processed everything
+  if (fromBlock > currentBlock) {
+    console.log(`Already processed up to block ${currentBlock}`);
+    return;
+  }
+
+  // Safety cap: scan at most 1000 blocks at once
+  if (currentBlock - fromBlock > 1000) {
+    console.warn(`Large gap detected: ${currentBlock - fromBlock} blocks. Capping at 1000.`);
+    fromBlock = currentBlock - 1000;
+  }
+
+  const toBlock = currentBlock;
+  const fromBlockHex = '0x' + fromBlock.toString(16);
+  const toBlockHex = '0x' + toBlock.toString(16);
+
+  console.log(`Scanning blocks ${fromBlock} to ${toBlock}`);
 
   const alerts: any[] = [];
   const now = Date.now();
@@ -122,8 +151,8 @@ async function run(env: Env) {
   // 1. Aave V3 Monitoring
   const aaveLogs = await provider.send('eth_getLogs', [{
     address: AAVE_V3_POOL,
-    fromBlock: '0x' + fromBlock.toString(16),
-    toBlock: 'latest',
+    fromBlock: fromBlockHex,
+    toBlock: toBlockHex,
     topics: [
       [
         aaveInterface.getEvent('Borrow')?.topicHash,
@@ -186,8 +215,8 @@ async function run(env: Env) {
   // 2. Uniswap V3 Monitoring
   const uniswapLogs = await provider.send('eth_getLogs', [{
     address: UNISWAP_V3_FACTORY,
-    fromBlock: '0x' + fromBlock.toString(16),
-    toBlock: 'latest',
+    fromBlock: fromBlockHex,
+    toBlock: toBlockHex,
     topics: [
       [
         uniswapInterface.getEvent('Swap')?.topicHash,
@@ -254,6 +283,9 @@ async function run(env: Env) {
       await sendTelegram(alert, env);
     }
   }
+
+  // Update the last processed block in KV
+  await env.DEFI_WATCH_KV.put('last_processed_block', toBlock.toString());
 }
 
 export default {
