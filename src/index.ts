@@ -145,6 +145,66 @@ async function calculatePriceImpact(poolAddress: string, newSqrtPriceX96: bigint
   }
 }
 
+async function checkOraclePrice(assetAddress: string, env: Env, provider: JsonRpcProvider) {
+  try {
+    const oracle = new Contract(AAVE_ORACLE, ['function getAssetPrice(address) view returns (uint256)'], provider);
+    const currentPrice: bigint = await oracle.getAssetPrice(assetAddress);
+
+    const kvKey = `price:${assetAddress.toLowerCase()}`;
+    const lastStored = await env.DEFI_WATCH_KV.get(kvKey);
+
+    let lastPrice = 0n;
+    let deviation = 0;
+
+    if (lastStored) {
+      const parsed = JSON.parse(lastStored);
+      lastPrice = BigInt(parsed.price);
+
+      if (lastPrice > 0n) {
+        const diff = currentPrice > lastPrice ? currentPrice - lastPrice : lastPrice - currentPrice;
+        deviation = Number((diff * 10000n) / lastPrice) / 100;
+      }
+    }
+
+    await env.DEFI_WATCH_KV.put(kvKey, JSON.stringify({
+      price: currentPrice.toString(),
+      timestamp: Date.now()
+    }));
+
+    return {
+      currentPrice,
+      lastPrice,
+      deviation
+    };
+  } catch (e) {
+    console.error('Error in checkOraclePrice:', e);
+    return null;
+  }
+}
+
+async function checkChainlinkDivergence(assetAddress: string, aavePrice: bigint, provider: JsonRpcProvider) {
+  try {
+    const oracle = new Contract(AAVE_ORACLE, ['function getSourceOfAsset(address) view returns (address)'], provider);
+    const feedAddress = await oracle.getSourceOfAsset(assetAddress);
+
+    if (feedAddress === ZeroAddress) return null;
+
+    const feed = new Contract(feedAddress, ['function latestAnswer() view returns (int256)'], provider);
+    const chainlinkPrice: bigint = await feed.latestAnswer();
+
+    const diff = aavePrice > chainlinkPrice ? aavePrice - chainlinkPrice : chainlinkPrice - aavePrice;
+    const divergence = Number((diff * 10000n) / chainlinkPrice) / 100;
+
+    return {
+      chainlinkPrice,
+      divergence
+    };
+  } catch (e) {
+    console.error('Error in checkChainlinkDivergence:', e);
+    return null;
+  }
+}
+
 async function saveToSupabase(alert: any, env: Env) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
     console.warn('Supabase credentials missing');
@@ -258,6 +318,7 @@ async function run(env: Env) {
 
   const alerts: any[] = [];
   const now = Date.now();
+  const assetsToMonitor = new Set<string>();
 
   // 1. Aave V3 Monitoring
   const aaveLogs = await provider.send('eth_getLogs', [{
@@ -305,6 +366,7 @@ async function run(env: Env) {
 
     if (decoded.name === 'Borrow') {
       const { reserve, amount, user } = decoded.args;
+      assetsToMonitor.add(reserve);
       if (usdValue > 1000) {
         const pool = new Contract(AAVE_V3_POOL, [
           'function getUserAccountData(address user) view returns (uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor)'
@@ -347,7 +409,9 @@ async function run(env: Env) {
         });
       }
     } else if (decoded.name === 'LiquidationCall') {
-      const { user } = decoded.args;
+      const { user, collateralAsset, debtAsset } = decoded.args;
+      assetsToMonitor.add(collateralAsset);
+      assetsToMonitor.add(debtAsset);
       const tx = await getTransaction(log.transactionHash, provider);
       let actorPoints = 0;
       if (tx && !tx.to) actorPoints += 25;
@@ -366,7 +430,8 @@ async function run(env: Env) {
         threatPrefix: getThreatPrefix(actorRecord)
       });
     } else if (decoded.name === 'FlashLoan') {
-      const { initiator } = decoded.args;
+      const { initiator, asset } = decoded.args;
+      assetsToMonitor.add(asset);
       const isNewContract = await checkContractAge(initiator, currentBlock, provider);
       
       let actorPoints = 15; // flash loan detected
@@ -611,7 +676,65 @@ async function run(env: Env) {
     }
   }
 
-  // 3. Save to Supabase and Notify Telegram
+  // 3. Oracle Monitoring
+  const correlativeAlerts = alerts.filter(a => 
+    a.title.toLowerCase().includes('flashloan') || 
+    a.title.toLowerCase().includes('liquidation') ||
+    a.title.toLowerCase().includes('exploit pattern')
+  );
+
+  for (const asset of assetsToMonitor) {
+    const oracleInfo = await checkOraclePrice(asset, env, provider);
+    if (!oracleInfo) continue;
+
+    const chainlinkInfo = await checkChainlinkDivergence(asset, oracleInfo.currentPrice, provider);
+
+    let severity = '';
+    let type = '';
+
+    if (oracleInfo.deviation > 10) {
+      severity = 'critical';
+      type = 'Oracle_Price_Spike';
+    } else if (chainlinkInfo && chainlinkInfo.divergence > 7) {
+      severity = 'critical';
+      type = 'Oracle_Manipulation';
+    } else if (oracleInfo.deviation > 5) {
+      severity = 'high';
+      type = 'Oracle_Price_Movement';
+    } else if (chainlinkInfo && chainlinkInfo.divergence > 3) {
+      severity = 'high';
+      type = 'Oracle_Divergence';
+    }
+
+    if (severity) {
+      let title = 'Aave Oracle Price Anomaly';
+      let description = `Significant price anomaly detected for asset ${asset}. Deviation: ${oracleInfo.deviation.toFixed(2)}%, Chainlink Divergence: ${chainlinkInfo ? chainlinkInfo.divergence.toFixed(2) : 'N/A'}%`;
+
+      if (severity === 'critical' && correlativeAlerts.length > 0) {
+        title = 'ORACLE ATTACK IN PROGRESS';
+        const details = correlativeAlerts.map(a => a.title).join(', ');
+        description += ` | Triggered alongside: ${details}`;
+      }
+
+      alerts.push({
+        id: `oracle-${asset}-${toBlock}`,
+        contractId: 'aave-oracle',
+        contractName: 'Aave Oracle',
+        contractAddress: AAVE_ORACLE,
+        chain: 'ethereum',
+        protocol: 'aave',
+        severity,
+        type,
+        title,
+        description,
+        blockNumber: toBlock,
+        timestamp: now,
+        txHash: 'N/A'
+      });
+    }
+  }
+
+  // 4. Save to Supabase and Notify Telegram
   for (const alert of alerts) {
     await saveToSupabase(alert, env);
     if (alert.severity === 'critical' || alert.severity === 'emergency' || alert.severity === 'high') {
