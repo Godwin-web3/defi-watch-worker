@@ -11,12 +11,19 @@ interface Env {
   DEFI_WATCH_KV: KVNamespace;
 }
 
+interface ActorEvent {
+  description: string;
+  txHash: string;
+  blockNumber: number;
+  timestamp: number;
+}
+
 interface ActorRecord {
   score: number;
   firstSeen: number;
   lastSeen: number;
   eventCount: number;
-  recentEvents: string[];
+  recentEvents: ActorEvent[];
 }
 
 const AAVE_V3_POOL = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
@@ -41,7 +48,13 @@ async function getTransaction(txHash: string, provider: JsonRpcProvider) {
 
 async function getActorRecord(address: string, env: Env): Promise<ActorRecord> {
   const data = await env.DEFI_WATCH_KV.get(`actor:${address.toLowerCase()}`);
-  if (data) return JSON.parse(data);
+  if (data) {
+    const record = JSON.parse(data);
+    if (record.recentEvents && record.recentEvents.length > 0 && typeof record.recentEvents[0] === 'string') {
+      record.recentEvents = [];
+    }
+    return record;
+  }
   return {
     score: 0,
     firstSeen: Date.now(),
@@ -51,7 +64,7 @@ async function getActorRecord(address: string, env: Env): Promise<ActorRecord> {
   };
 }
 
-async function updateActor(address: string, additionalPoints: number, eventDescription: string, env: Env): Promise<ActorRecord> {
+async function updateActor(address: string, additionalPoints: number, eventDescription: string, env: Env, txHash: string, blockNumber: number): Promise<ActorRecord> {
   const record = await getActorRecord(address, env);
   let pointsToAdd = additionalPoints;
 
@@ -62,7 +75,12 @@ async function updateActor(address: string, additionalPoints: number, eventDescr
   record.score += pointsToAdd;
   record.lastSeen = Date.now();
   record.eventCount += 1;
-  record.recentEvents.unshift(`${new Date().toISOString()}: ${eventDescription} (+${pointsToAdd} pts)`);
+  record.recentEvents.unshift({
+    description: eventDescription,
+    txHash,
+    blockNumber,
+    timestamp: Date.now()
+  });
   if (record.recentEvents.length > 10) record.recentEvents.pop();
 
   await env.DEFI_WATCH_KV.put(`actor:${address.toLowerCase()}`, JSON.stringify(record));
@@ -163,7 +181,30 @@ async function sendTelegram(alert: any, env: Env) {
 
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
   const threatPrefix = alert.threatPrefix || "";
-  const text = `🚨 *${threatPrefix}${alert.title.toUpperCase()} ALERT* 🚨\n\nSeverity: ${alert.severity}\nDetails: ${alert.description}\nBlock: ${alert.blockNumber}\nTX: [View on Etherscan](https://etherscan.io/tx/${alert.txHash})`;
+  
+  const actorScoreLine = `Actor Score: ${alert.actorScore} | History: ${alert.actorHistoryCount}`;
+  let historySection = "";
+  if ((alert.actorScore || 0) > 60 && alert.recentEvents && alert.recentEvents.length > 1) {
+    const history = alert.recentEvents.slice(1, 6);
+    const df = new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'UTC'
+    });
+    
+    historySection = "\n" + history.map((ev: any) => {
+      const dateStr = df.format(new Date(ev.timestamp)).replace(',', '') + " UTC";
+      return `• ${ev.description} (${dateStr} | Block: ${ev.blockNumber}) [TX](https://etherscan.io/tx/${ev.txHash})`;
+    }).join("\n");
+  }
+
+  const currentEventDetails = alert.description.split(" | Actor Score:")[0];
+  const text = `🚨 *${threatPrefix}${alert.title.toUpperCase()} ALERT* 🚨\n\nSeverity: ${alert.severity}\n${actorScoreLine}${historySection}\nDetails: ${currentEventDetails}\nBlock: ${alert.blockNumber}\nTX: [View on Etherscan](https://etherscan.io/tx/${alert.txHash})`;
+
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -291,7 +332,7 @@ async function run(env: Env) {
         const tx = await getTransaction(log.transactionHash, provider);
         if (tx && !tx.to) actorPoints += 25;
 
-        const actorRecord = await updateActor(user, actorPoints, `Aave Borrow: ${usdValue.toFixed(2)} USD`, env);
+        const actorRecord = await updateActor(user, actorPoints, `Aave Borrow: ${usdValue.toFixed(2)} USD`, env, log.transactionHash, blockNumber);
 
         alerts.push({
           ...baseAlert,
@@ -301,6 +342,7 @@ async function run(env: Env) {
           description: formatActorDescription(`Large borrow: ${usdValue.toFixed(2)} USD by ${user} | Health Factor: ${healthFactor.toFixed(2)} | LTV: ${(ltv / 100).toFixed(0)}% | First time borrower: ${isFirstTime ? 'yes' : 'no'}`, actorRecord),
           actorScore: actorRecord.score,
           actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
           threatPrefix: getThreatPrefix(actorRecord)
         });
       }
@@ -310,7 +352,7 @@ async function run(env: Env) {
       let actorPoints = 0;
       if (tx && !tx.to) actorPoints += 25;
       
-      const actorRecord = await updateActor(user, actorPoints, 'Aave Liquidation', env);
+      const actorRecord = await updateActor(user, actorPoints, 'Aave Liquidation', env, log.transactionHash, blockNumber);
 
       alerts.push({
         ...baseAlert,
@@ -320,6 +362,7 @@ async function run(env: Env) {
         description: formatActorDescription(`Liquidation detected for user ${user}`, actorRecord),
         actorScore: actorRecord.score,
         actorHistoryCount: actorRecord.eventCount,
+        recentEvents: actorRecord.recentEvents,
         threatPrefix: getThreatPrefix(actorRecord)
       });
     } else if (decoded.name === 'FlashLoan') {
@@ -331,7 +374,7 @@ async function run(env: Env) {
       const tx = await getTransaction(log.transactionHash, provider);
       if (tx && !tx.to) actorPoints += 25;
 
-      const actorRecord = await updateActor(initiator, actorPoints, 'Aave FlashLoan', env);
+      const actorRecord = await updateActor(initiator, actorPoints, 'Aave FlashLoan', env, log.transactionHash, blockNumber);
 
       if (isNewContract) {
         alerts.push({
@@ -342,6 +385,7 @@ async function run(env: Env) {
           description: formatActorDescription(`FlashLoan by new contract (<7 days): ${initiator}`, actorRecord),
           actorScore: actorRecord.score,
           actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
           threatPrefix: getThreatPrefix(actorRecord)
         });
       }
@@ -378,7 +422,7 @@ async function run(env: Env) {
     if (tx && !tx.to) actorPoints += 25;
 
     if (hasFlashLoan && hasBorrow && hasLiquidation) {
-      const actorRecord = await updateActor(actor, actorPoints, 'Aave Exploit Pattern (Flash+Borrow+Liq)', env);
+      const actorRecord = await updateActor(actor, actorPoints, 'Aave Exploit Pattern (Flash+Borrow+Liq)', env, txHash, txLogs[0].blockNumber);
       alerts.push({
         ...baseAlert,
         id: `${txHash}-aave-exploit-pattern`,
@@ -387,10 +431,11 @@ async function run(env: Env) {
         description: formatActorDescription(`FlashLoan, Borrow, and Liquidation detected in same transaction: ${txHash}`, actorRecord),
         actorScore: actorRecord.score,
         actorHistoryCount: actorRecord.eventCount,
+        recentEvents: actorRecord.recentEvents,
         threatPrefix: getThreatPrefix(actorRecord)
       });
     } else if (hasFlashLoan && hasBorrow) {
-      const actorRecord = await updateActor(actor, actorPoints, 'Aave FlashLoan + Borrow', env);
+      const actorRecord = await updateActor(actor, actorPoints, 'Aave FlashLoan + Borrow', env, txHash, txLogs[0].blockNumber);
       alerts.push({
         ...baseAlert,
         id: `${txHash}-aave-flash-borrow`,
@@ -399,10 +444,11 @@ async function run(env: Env) {
         description: formatActorDescription(`FlashLoan and Borrow detected in same transaction: ${txHash}`, actorRecord),
         actorScore: actorRecord.score,
         actorHistoryCount: actorRecord.eventCount,
+        recentEvents: actorRecord.recentEvents,
         threatPrefix: getThreatPrefix(actorRecord)
       });
     } else if (hasFlashLoan && hasLiquidation) {
-      const actorRecord = await updateActor(actor, actorPoints, 'Aave FlashLoan + Liquidation', env);
+      const actorRecord = await updateActor(actor, actorPoints, 'Aave FlashLoan + Liquidation', env, txHash, txLogs[0].blockNumber);
       alerts.push({
         ...baseAlert,
         id: `${txHash}-aave-flash-liq`,
@@ -411,6 +457,7 @@ async function run(env: Env) {
         description: formatActorDescription(`FlashLoan and Liquidation detected in same transaction: ${txHash}`, actorRecord),
         actorScore: actorRecord.score,
         actorHistoryCount: actorRecord.eventCount,
+        recentEvents: actorRecord.recentEvents,
         threatPrefix: getThreatPrefix(actorRecord)
       });
     }
@@ -447,7 +494,7 @@ async function run(env: Env) {
       if (tx && !tx.to) actorPoints += 25;
 
       if (liquidations.length >= 3) {
-        const actorRecord = await updateActor(actor, actorPoints, 'Aave Liquidation Cascade', env);
+        const actorRecord = await updateActor(actor, actorPoints, 'Aave Liquidation Cascade', env, liquidations[0].transactionHash, blockNumber);
         alerts.push({
           ...baseAlert,
           id: `${blockNumber}-aave-liq-cascade`,
@@ -457,12 +504,13 @@ async function run(env: Env) {
           description: formatActorDescription(`${liquidations.length} liquidations detected in block ${blockNumber}`, actorRecord),
           actorScore: actorRecord.score,
           actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
           threatPrefix: getThreatPrefix(actorRecord)
         });
       }
 
       if (hasLargeBorrow && liquidations.length > 0) {
-        const actorRecord = await updateActor(actor, actorPoints, 'Aave Borrow + Liquidation Block', env);
+        const actorRecord = await updateActor(actor, actorPoints, 'Aave Borrow + Liquidation Block', env, triggerLog.transactionHash, blockNumber);
         alerts.push({
           ...baseAlert,
           id: `${blockNumber}-aave-borrow-liq-block`,
@@ -472,6 +520,7 @@ async function run(env: Env) {
           description: formatActorDescription(`Large borrow (>$100k) and liquidation detected in same block ${blockNumber}`, actorRecord),
           actorScore: actorRecord.score,
           actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
           threatPrefix: getThreatPrefix(actorRecord)
         });
       }
@@ -518,7 +567,7 @@ async function run(env: Env) {
         const actor = tx?.from || ZeroAddress;
         let actorPoints = 0;
         if (tx && !tx.to) actorPoints += 25;
-        const actorRecord = await updateActor(actor, actorPoints, 'Uniswap High Impact Swap', env);
+        const actorRecord = await updateActor(actor, actorPoints, 'Uniswap High Impact Swap', env, log.transactionHash, blockNumber);
 
         alerts.push({
           ...baseAlert,
@@ -528,6 +577,7 @@ async function run(env: Env) {
           description: formatActorDescription(`High price impact swap: ${(impact * 100).toFixed(2)}%`, actorRecord),
           actorScore: actorRecord.score,
           actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
           threatPrefix: getThreatPrefix(actorRecord)
         });
       }
@@ -544,7 +594,7 @@ async function run(env: Env) {
         const actor = tx?.from || ZeroAddress; // Use from if owner is not available, but owner should be here
         let actorPoints = 0;
         if (tx && !tx.to) actorPoints += 25;
-        const actorRecord = await updateActor(owner, actorPoints, 'Uniswap Mint & Burn Spike', env);
+        const actorRecord = await updateActor(owner, actorPoints, 'Uniswap Mint & Burn Spike', env, log.transactionHash, blockNumber);
 
         alerts.push({
           ...baseAlert,
@@ -554,6 +604,7 @@ async function run(env: Env) {
           description: formatActorDescription(`Mint and Burn in same block by ${owner}`, actorRecord),
           actorScore: actorRecord.score,
           actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
           threatPrefix: getThreatPrefix(actorRecord)
         });
       }
