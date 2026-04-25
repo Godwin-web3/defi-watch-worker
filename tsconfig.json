@@ -15,6 +15,7 @@
 		"moduleResolution": "node",
     /* Enable importing .json files */
 		"resolveJsonModule": true,
+		"types": ["@cloudflare/workers-types"],
 
     /* Allow JavaScript files to be a part of your program. Use the `checkJS` option to get errors from these files. */
 		"allowJs": true,
