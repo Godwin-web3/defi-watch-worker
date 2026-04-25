@@ -439,40 +439,42 @@ async function run(env: Env) {
       timestamp: now,
     };
 
-    const triggerLog = (borrows.find(b => b.usdValue > 100000) || liquidations[0]);
-    const tx = await getTransaction(triggerLog.transactionHash, provider);
-    const actor = tx?.from || ZeroAddress;
-    let actorPoints = 0;
-    if (tx && !tx.to) actorPoints += 25;
+    if (liquidations.length >= 3 || (hasLargeBorrow && liquidations.length > 0)) {
+      const triggerLog = borrows.find(b => b.usdValue > 100000) || liquidations[0];
+      const tx = await getTransaction(triggerLog.transactionHash, provider);
+      const actor = tx?.from || ZeroAddress;
+      let actorPoints = 0;
+      if (tx && !tx.to) actorPoints += 25;
 
-    if (liquidations.length >= 3) {
-      const actorRecord = await updateActor(actor, actorPoints, 'Aave Liquidation Cascade', env);
-      alerts.push({
-        ...baseAlert,
-        id: `${blockNumber}-aave-liq-cascade`,
-        txHash: liquidations[0].transactionHash,
-        severity: 'critical',
-        title: 'Aave V3 Liquidation Cascade',
-        description: formatActorDescription(`${liquidations.length} liquidations detected in block ${blockNumber}`, actorRecord),
-        actorScore: actorRecord.score,
-        actorHistoryCount: actorRecord.eventCount,
-        threatPrefix: getThreatPrefix(actorRecord)
-      });
-    }
+      if (liquidations.length >= 3) {
+        const actorRecord = await updateActor(actor, actorPoints, 'Aave Liquidation Cascade', env);
+        alerts.push({
+          ...baseAlert,
+          id: `${blockNumber}-aave-liq-cascade`,
+          txHash: liquidations[0].transactionHash,
+          severity: 'critical',
+          title: 'Aave V3 Liquidation Cascade',
+          description: formatActorDescription(`${liquidations.length} liquidations detected in block ${blockNumber}`, actorRecord),
+          actorScore: actorRecord.score,
+          actorHistoryCount: actorRecord.eventCount,
+          threatPrefix: getThreatPrefix(actorRecord)
+        });
+      }
 
-    if (hasLargeBorrow && liquidations.length > 0) {
-      const actorRecord = await updateActor(actor, actorPoints, 'Aave Borrow + Liquidation Block', env);
-      alerts.push({
-        ...baseAlert,
-        id: `${blockNumber}-aave-borrow-liq-block`,
-        txHash: triggerLog.transactionHash,
-        severity: 'critical',
-        title: 'Aave V3 Borrow + Liquidation Block',
-        description: formatActorDescription(`Large borrow (>$100k) and liquidation detected in same block ${blockNumber}`, actorRecord),
-        actorScore: actorRecord.score,
-        actorHistoryCount: actorRecord.eventCount,
-        threatPrefix: getThreatPrefix(actorRecord)
-      });
+      if (hasLargeBorrow && liquidations.length > 0) {
+        const actorRecord = await updateActor(actor, actorPoints, 'Aave Borrow + Liquidation Block', env);
+        alerts.push({
+          ...baseAlert,
+          id: `${blockNumber}-aave-borrow-liq-block`,
+          txHash: triggerLog.transactionHash,
+          severity: 'critical',
+          title: 'Aave V3 Borrow + Liquidation Block',
+          description: formatActorDescription(`Large borrow (>$100k) and liquidation detected in same block ${blockNumber}`, actorRecord),
+          actorScore: actorRecord.score,
+          actorHistoryCount: actorRecord.eventCount,
+          threatPrefix: getThreatPrefix(actorRecord)
+        });
+      }
     }
   }
 
