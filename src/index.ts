@@ -184,6 +184,7 @@ async function run(env: Env) {
 
   // 2. Uniswap V3 Monitoring
   const uniswapLogs = await provider.send('eth_getLogs', [{
+    address: UNISWAP_V3_FACTORY,
     fromBlock: '0x' + fromBlock.toString(16),
     toBlock: 'latest',
     topics: [
