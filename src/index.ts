@@ -195,12 +195,30 @@ async function run(env: Env) {
     if (decoded.name === 'Borrow') {
       const { reserve, amount, user } = decoded.args;
       if (usdValue > 1000) {
+        const pool = new Contract(AAVE_V3_POOL, [
+          'function getUserAccountData(address user) view returns (uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor)'
+        ], provider);
+
+        const [currentData, previousData] = await Promise.all([
+          pool.getUserAccountData(user, { blockTag: blockNumber }),
+          pool.getUserAccountData(user, { blockTag: blockNumber - 1 }).catch(() => null)
+        ]);
+
+        const healthFactor = currentData ? Number(formatUnits(currentData.healthFactor, 18)) : 0;
+        const ltv = currentData ? Number(currentData.ltv) : 0;
+        const isFirstTime = previousData ? previousData.totalCollateralBase === 0n : true;
+
+        let severity = 'high';
+        if (currentData && (currentData.healthFactor < 1500000000000000000n || currentData.ltv > 8000n)) {
+          severity = 'critical';
+        }
+
         alerts.push({
           ...baseAlert,
           id: `${log.transactionHash}-aave-borrow`,
-          severity: 'high',
+          severity,
           title: 'Aave V3 Large Borrow',
-          description: `Large borrow: ${usdValue.toFixed(2)} USD by ${user}`,
+          description: `Large borrow: ${usdValue.toFixed(2)} USD by ${user} | Health Factor: ${healthFactor.toFixed(2)} | LTV: ${(ltv / 100).toFixed(0)}% | First time borrower: ${isFirstTime ? 'yes' : 'no'}`,
         });
       }
     } else if (decoded.name === 'LiquidationCall') {
