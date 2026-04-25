@@ -11,10 +11,6 @@
     ]
   },
   "vars": {
-    "SUPABASE_URL": "YOUR_SUPABASE_URL",
-    "SUPABASE_SERVICE_KEY": "YOUR_SUPABASE_SERVICE_KEY",
-    "TELEGRAM_BOT_TOKEN": "YOUR_TELEGRAM_BOT_TOKEN",
-    "TELEGRAM_CHAT_ID": "YOUR_TELEGRAM_CHAT_ID",
     "RPC_URL": "https://ethereum.publicnode.com"
   }
 }
