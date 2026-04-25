@@ -33,7 +33,7 @@ export default {
     const aaveLogs = await provider.send('eth_getLogs', [{
       address: AAVE_V3_POOL,
       fromBlock: '0x' + fromBlock.toString(16),
-      toBlock: '0x' + currentBlock.toString(16),
+      toBlock: 'latest',
       topics: [
         [
           aaveInterface.getEvent('Borrow')?.topicHash,
@@ -90,7 +90,7 @@ export default {
     const uniswapLogs = await provider.send('eth_getLogs', [{
       address: UNISWAP_V3_FACTORY, // Following prompt, though pools are usually separate
       fromBlock: '0x' + fromBlock.toString(16),
-      toBlock: '0x' + currentBlock.toString(16),
+      toBlock: 'latest',
       topics: [
         [
           uniswapInterface.getEvent('Swap')?.topicHash,
