@@ -162,9 +162,24 @@ async function run(env: Env) {
     ]
   }]);
 
+  const decodedAaveLogs: any[] = [];
   for (const log of aaveLogs) {
     const decoded = aaveInterface.parseLog(log);
     if (!decoded) continue;
+
+    const blockNumber = parseInt(log.blockNumber, 16);
+    let usdValue = 0;
+    if (decoded.name === 'Borrow') {
+      usdValue = await getUsdValue(decoded.args.reserve, decoded.args.amount, provider);
+    }
+
+    decodedAaveLogs.push({
+      log,
+      decoded,
+      usdValue,
+      blockNumber,
+      transactionHash: log.transactionHash
+    });
 
     const baseAlert = {
       contractId: 'aave-v3',
@@ -173,13 +188,12 @@ async function run(env: Env) {
       chain: 'ethereum',
       protocol: 'aave',
       txHash: log.transactionHash,
-      blockNumber: parseInt(log.blockNumber, 16),
+      blockNumber: blockNumber,
       timestamp: now,
     };
 
     if (decoded.name === 'Borrow') {
       const { reserve, amount, user } = decoded.args;
-      const usdValue = await getUsdValue(reserve, amount, provider);
       if (usdValue > 1000) {
         alerts.push({
           ...baseAlert,
@@ -209,6 +223,102 @@ async function run(env: Env) {
           description: `FlashLoan by new contract (<7 days): ${initiator}`,
         });
       }
+    }
+  }
+
+  // Layer 1 - Same transaction correlation
+  const logsByTx: Record<string, any[]> = {};
+  for (const item of decodedAaveLogs) {
+    if (!logsByTx[item.transactionHash]) logsByTx[item.transactionHash] = [];
+    logsByTx[item.transactionHash].push(item);
+  }
+
+  for (const [txHash, txLogs] of Object.entries(logsByTx)) {
+    const hasFlashLoan = txLogs.some(l => l.decoded.name === 'FlashLoan');
+    const hasBorrow = txLogs.some(l => l.decoded.name === 'Borrow');
+    const hasLiquidation = txLogs.some(l => l.decoded.name === 'LiquidationCall');
+
+    const baseAlert = {
+      contractId: 'aave-v3',
+      contractName: 'Aave V3 Pool',
+      contractAddress: AAVE_V3_POOL,
+      chain: 'ethereum',
+      protocol: 'aave',
+      txHash: txHash,
+      blockNumber: txLogs[0].blockNumber,
+      timestamp: now,
+    };
+
+    if (hasFlashLoan && hasBorrow && hasLiquidation) {
+      alerts.push({
+        ...baseAlert,
+        id: `${txHash}-aave-exploit-pattern`,
+        severity: 'critical',
+        title: 'Aave V3 Exploit Pattern',
+        description: `FlashLoan, Borrow, and Liquidation detected in same transaction: ${txHash}`,
+      });
+    } else if (hasFlashLoan && hasBorrow) {
+      alerts.push({
+        ...baseAlert,
+        id: `${txHash}-aave-flash-borrow`,
+        severity: 'high',
+        title: 'Aave V3 FlashLoan + Borrow',
+        description: `FlashLoan and Borrow detected in same transaction: ${txHash}`,
+      });
+    } else if (hasFlashLoan && hasLiquidation) {
+      alerts.push({
+        ...baseAlert,
+        id: `${txHash}-aave-flash-liq`,
+        severity: 'critical',
+        title: 'Aave V3 FlashLoan + Liquidation',
+        description: `FlashLoan and Liquidation detected in same transaction: ${txHash}`,
+      });
+    }
+  }
+
+  // Layer 2 - Same block correlation
+  const logsByBlock: Record<number, any[]> = {};
+  for (const item of decodedAaveLogs) {
+    if (!logsByBlock[item.blockNumber]) logsByBlock[item.blockNumber] = [];
+    logsByBlock[item.blockNumber].push(item);
+  }
+
+  for (const [blockNumberStr, blockLogs] of Object.entries(logsByBlock)) {
+    const blockNumber = parseInt(blockNumberStr);
+    const liquidations = blockLogs.filter(l => l.decoded.name === 'LiquidationCall');
+    const borrows = blockLogs.filter(l => l.decoded.name === 'Borrow');
+    const hasLargeBorrow = borrows.some(l => l.usdValue > 100000);
+
+    const baseAlert = {
+      contractId: 'aave-v3',
+      contractName: 'Aave V3 Pool',
+      contractAddress: AAVE_V3_POOL,
+      chain: 'ethereum',
+      protocol: 'aave',
+      blockNumber: blockNumber,
+      timestamp: now,
+    };
+
+    if (liquidations.length >= 3) {
+      alerts.push({
+        ...baseAlert,
+        id: `${blockNumber}-aave-liq-cascade`,
+        txHash: liquidations[0].transactionHash,
+        severity: 'critical',
+        title: 'Aave V3 Liquidation Cascade',
+        description: `${liquidations.length} liquidations detected in block ${blockNumber}`,
+      });
+    }
+
+    if (hasLargeBorrow && liquidations.length > 0) {
+      alerts.push({
+        ...baseAlert,
+        id: `${blockNumber}-aave-borrow-liq-block`,
+        txHash: (borrows.find(b => b.usdValue > 100000) || liquidations[0]).transactionHash,
+        severity: 'critical',
+        title: 'Aave V3 Borrow + Liquidation Block',
+        description: `Large borrow (>$100k) and liquidation detected in same block ${blockNumber}`,
+      });
     }
   }
 
