@@ -19,7 +19,7 @@ const uniswapInterface = new Interface(uniswapAbi);
 
 export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    await run(env);
+    await this.run(env);
   },
 
   async run(env: Env) {
