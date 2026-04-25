@@ -19,10 +19,10 @@ const uniswapInterface = new Interface(uniswapAbi);
 
 export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    await this.run(env);
+    await run(env);
   },
 
-  async run(env: Env) {
+  async function run(env: Env) {
     const provider = new JsonRpcProvider(env.RPC_URL || 'https://ethereum.publicnode.com');
     const currentBlock = await provider.getBlockNumber();
     const fromBlock = currentBlock - 100;
