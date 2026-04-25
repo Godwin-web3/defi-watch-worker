@@ -12,7 +12,7 @@ interface Env {
 
 const AAVE_V3_POOL = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
 const UNISWAP_V3_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
-const AAVE_ORACLE = '0x54586bE12322E69969715390d413007f35a9a9C4';
+const AAVE_ORACLE = '0x54586BE12322e69969715390d413007F35a9a9c4';
 
 const aaveInterface = new Interface(aaveAbi);
 const uniswapInterface = new Interface(uniswapAbi);
