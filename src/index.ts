@@ -1,4 +1,4 @@
-import { Interface, JsonRpcProvider, Contract, ZeroAddress, formatUnits } from 'ethers';
+import { Interface, JsonRpcProvider, Contract, ZeroAddress, formatUnits, getAddress } from 'ethers';
 import aaveAbi from './abis/aave-v3.json';
 import uniswapAbi from './abis/uniswap-v3.json';
 
@@ -19,6 +19,7 @@ const uniswapInterface = new Interface(uniswapAbi);
 
 async function getUsdValue(reserve: string, amount: bigint, provider: JsonRpcProvider): Promise<number> {
   try {
+    reserve = getAddress(reserve);
     const oracle = new Contract(AAVE_ORACLE, ['function getAssetPrice(address) view returns (uint256)'], provider);
     const asset = new Contract(reserve, ['function decimals() view returns (uint8)'], provider);
     
