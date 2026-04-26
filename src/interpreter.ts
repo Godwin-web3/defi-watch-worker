@@ -69,7 +69,7 @@ function buildAlertContext(alert: any): AlertContext {
   const confidence = deriveConfidence(alert);
   return {
     event_type: title,
-    protocol: title.includes('Aave') ? 'Aave V3' : title.includes('Uniswap') ? 'Uniswap V3' : 'Unknown',
+    protocol: title.includes('Aave') ? 'Aave V3' : title.includes('Uniswap') ? 'Uniswap V3' : title.includes('Curve') ? 'Curve Finance' : title.includes('Maker') ? 'MakerDAO' : title.includes('Lido') ? 'Lido Finance' : 'Unknown',
     chain: 'Ethereum',
     amount_usd,
     health_factor,
@@ -170,6 +170,62 @@ function getRuleBasedInterpretation(context: AlertContext): AIInterpretation {
       risk: context.health_factor && context.health_factor < 1.3 ? `Health factor is dangerously close to liquidation — a small price move triggers forced unwinding.` : `High LTV position; leverage is elevated but not immediately at risk.`,
       next_move: `Actor may attempt to leverage further or is positioning for a liquidation opportunity.`,
       watch: `Monitor health factor below 1.05, additional borrows, and same-block liquidation events.`
+    };
+  } else if (context.event_type.includes('Curve Large Swap')) {
+    return {
+      summary: `A massive swap was detected in a Curve pool, indicating large capital movement or possible stablecoin instability.`,
+      risk: `High-volume swaps can de-peg stables or indicate a flight to safety before an exploit or market crash.`,
+      next_move: `Actor may be withdrawing liquidity or interacting with other protocols using the swapped assets.`,
+      watch: `Watch for liquidity withdrawals in Curve and borrow activity in Aave/Maker for the swapped assets.`
+    };
+  } else if (context.event_type.includes('Curve RampA')) {
+    return {
+      summary: `Admin action: The amplification coefficient (A) of a Curve pool is being adjusted over time.`,
+      risk: `Changes to A modify the price curve; while often legitimate maintenance, it can be used to "slow-drain" or manipulate a pool if the admin key is compromised.`,
+      next_move: `The pool's pricing efficiency for large trades will change as A ramps to its new target.`,
+      watch: `Monitor for large swaps or liquidity exits while A is ramping.`
+    };
+  } else if (context.event_type.includes('Curve Imbalanced Withdrawal')) {
+    return {
+      summary: `Large imbalanced liquidity removal from a Curve pool, skewing the pool's asset ratios.`,
+      risk: `Imbalanced withdrawals can be used to intentionally tilt a pool's price or as part of a sandwich/reentrancy attack.`,
+      next_move: `Actor may be positioning to exploit a pricing disparity or has finished a multi-step trade.`,
+      watch: `Watch for same-block swaps or interactions with other DEXs to capitalize on the pool's new ratio.`
+      };
+      } else if (context.event_type.includes('REENTRANCY ATTACK DETECTED')) {
+      return {
+        summary: `A high-confidence reentrancy signature was detected in a Curve pool: simultaneous imbalanced withdrawal and swaps in a single transaction.`,
+        risk: `This is a definitive exploit pattern where the attacker manipulates pool state mid-execution to withdraw more funds than they are entitled to.`,
+        next_move: `The attacker will likely bridge the stolen funds, swap to ETH/BTC via mixers, or move them to a centralized exchange.`,
+        watch: `IMMEDIATE ACTION REQUIRED: Monitor for fund movements to mixers (Tornado Cash) or CEX deposit addresses.`
+      };
+      } else if (context.event_type.includes('Curve Large Swap')) {
+    return {
+      summary: `A massive amount of USDC was swapped for DAI (or vice versa) via the Maker Peg Stability Module.`,
+      risk: `Extremely large PSM swaps can drain the module's collateral or indicate systemic flight from a specific stablecoin.`,
+      next_move: `Actor may be using the DAI to interact with Maker vaults, or moving large capital across the DeFi ecosystem.`,
+      watch: `Monitor PSM liquidity levels and any same-block interactions with the Maker protocol.`
+    };
+  } else if (context.event_type.includes('Maker Governance Action')) {
+    return {
+      summary: `MakerDAO governance parameter was updated, potentially changing fees or debt ceilings.`,
+      risk: `While usually routine, unexpected governance changes can be a precursor to emergency actions or indicate a compromised administrative key.`,
+      next_move: `Market participants will adjust their positions according to the new protocol parameters.`,
+      watch: `Monitor for large liquidations or vault closures following the parameter change.`
+    };
+  } else if (context.event_type.includes('Lido Rebase Anomaly')) {
+    return {
+      summary: `A Lido stETH rebase event reported an unexpected ratio, either negative or significantly higher than normal.`,
+      risk: `Negative rebases indicate slashing of validators, while massive positive rebases could signal a math bug or oracle failure.`,
+      next_move: `If severe, users may rush to the withdrawal queue, causing secondary liquidity stress.`,
+      watch: `Monitor the Lido Withdrawal Queue and stETH price on secondary markets (Curve/Uniswap).`
+    };
+  } else if (context.event_type.includes('Lido Large Withdrawal')) {
+    return {
+      summary: `A single address requested a massive withdrawal of stETH from the Lido protocol.`,
+      risk: `Large withdrawals increase the exit queue time and can indicate institutional flight or a "bank run" scenario if combined with other stress signals.`,
+      next_move: `Actor will wait for the withdrawal to be fulfilled, which could take days depending on the queue.`,
+      watch: `Watch for same-block activity from this address and overall growth of the withdrawal queue.`
     };
   } else if (context.event_type.includes('High Impact Swap')) {
     const impact = context.priceImpact ? (context.priceImpact * 100).toFixed(2) : 'unknown';

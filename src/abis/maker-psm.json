@@ -1,0 +1,31 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "name": "what", "type": "bytes32" },
+      { "indexed": false, "name": "data", "type": "uint256" }
+    ],
+    "name": "File",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "name": "owner", "type": "address" },
+      { "indexed": false, "name": "value", "type": "uint256" },
+      { "indexed": false, "name": "fee", "type": "uint256" }
+    ],
+    "name": "SellGem",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "name": "owner", "type": "address" },
+      { "indexed": false, "name": "value", "type": "uint256" },
+      { "indexed": false, "name": "fee", "type": "uint256" }
+    ],
+    "name": "BuyGem",
+    "type": "event"
+  }
+]

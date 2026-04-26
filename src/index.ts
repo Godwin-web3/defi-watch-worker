@@ -1,6 +1,9 @@
 import { Interface, JsonRpcProvider, Contract, ZeroAddress, formatUnits, getAddress } from 'ethers';
 import aaveAbi from './abis/aave-v3.json';
 import uniswapAbi from './abis/uniswap-v3.json';
+import curveAbi from './abis/curve-stableswap.json';
+import makerAbi from './abis/maker-psm.json';
+import lidoAbi from './abis/lido.json';
 import { getUsdValue, AAVE_ORACLE } from './utils';
 import { computeFlowDelta } from './flowTracker';
 import { interpretAlert } from './interpreter';
@@ -34,9 +37,18 @@ interface ActorRecord {
 
 const AAVE_V3_POOL = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
 const UNISWAP_V3_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
+const CURVE_FACTORY = '0x0000000022D53366457F9d5E68Ec105046FC4383';
+const CURVE_3POOL = '0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7';
+const CURVE_STETH_POOL = '0xDC24316b9AE028F1497c275EB9192a3Ea0f67022';
+const MAKER_PSM_USDC = '0x89B78CfA322F6C573a15239C73F6c1242e8b92ad';
+const LIDO_STETH = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84';
+const LIDO_WITHDRAWAL_QUEUE = '0x889edC2BDE944250596279FE1127e13d8212Ad1b';
 
 const aaveInterface = new Interface(aaveAbi);
 const uniswapInterface = new Interface(uniswapAbi);
+const curveInterface = new Interface(curveAbi);
+const makerPsmInterface = new Interface(makerAbi);
+const lidoInterface = new Interface(lidoAbi);
 
 const txCache = new Map<string, any>();
 
@@ -725,7 +737,282 @@ async function run(env: Env) {
     }
   }
 
-  // 3. Oracle Monitoring
+  // 3. Curve Monitoring
+  const curveLogs = await provider.send('eth_getLogs', [{
+    address: [CURVE_3POOL, CURVE_STETH_POOL],
+    fromBlock: fromBlockHex,
+    toBlock: toBlockHex,
+    topics: [
+      [
+        curveInterface.getEvent('TokenExchange')?.topicHash,
+        curveInterface.getEvent('RampA')?.topicHash,
+        curveInterface.getEvent('StopRampA')?.topicHash,
+        curveInterface.getEvent('RemoveLiquidityImbalance')?.topicHash
+      ]
+    ]
+  }]);
+
+  for (const log of curveLogs) {
+    const decoded = curveInterface.parseLog(log);
+    if (!decoded) continue;
+
+    const blockNumber = parseInt(log.blockNumber, 16);
+    const baseAlert = {
+      contractId: 'curve-pool',
+      contractName: log.address.toLowerCase() === CURVE_3POOL.toLowerCase() ? 'Curve 3Pool' : 'Curve stETH Pool',
+      contractAddress: log.address,
+      chain: 'ethereum',
+      protocol: 'curve',
+      txHash: log.transactionHash,
+      blockNumber,
+      timestamp: now,
+    };
+
+    if (decoded.name === 'TokenExchange') {
+      const { tokens_sold, tokens_bought } = decoded.args;
+      // Heuristic: large swap > 1M tokens (assuming stables or ETH)
+      if (tokens_sold > 1000000n * 10n**18n || tokens_bought > 1000000n * 10n**18n) {
+        const tx = await getTransaction(log.transactionHash, provider);
+        const actor = tx?.from || ZeroAddress;
+        let actorPoints = 10;
+        if (tx && !tx.to) actorPoints += 25;
+        const actorRecord = await updateActor(actor, actorPoints, 'Curve Large Swap', env, log.transactionHash, blockNumber);
+
+        alerts.push({
+          ...baseAlert,
+          id: `${log.transactionHash}-curve-swap`,
+          severity: 'warning',
+          title: 'Curve Large Swap',
+          description: formatActorDescription(`Large swap detected in Curve pool`, actorRecord),
+          actorScore: actorRecord.score,
+          actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
+          threatPrefix: getThreatPrefix(actorRecord)
+        });
+      }
+    } else if (decoded.name === 'RampA') {
+      const { old_A, new_A } = decoded.args;
+      const tx = await getTransaction(log.transactionHash, provider);
+      const actor = tx?.from || ZeroAddress;
+      const actorRecord = await updateActor(actor, 50, 'Curve RampA (Admin)', env, log.transactionHash, blockNumber);
+
+      alerts.push({
+        ...baseAlert,
+        id: `${log.transactionHash}-curve-rampa`,
+        severity: 'high',
+        title: 'Curve Admin Action: RampA',
+        description: formatActorDescription(`Amplification coefficient Ramp started: ${old_A} -> ${new_A}`, actorRecord),
+        actorScore: actorRecord.score,
+        actorHistoryCount: actorRecord.eventCount,
+        recentEvents: actorRecord.recentEvents,
+        threatPrefix: getThreatPrefix(actorRecord)
+      });
+    } else if (decoded.name === 'RemoveLiquidityImbalance') {
+      const tx = await getTransaction(log.transactionHash, provider);
+      const actor = tx?.from || ZeroAddress;
+      const actorRecord = await updateActor(actor, 30, 'Curve Imbalanced Withdrawal', env, log.transactionHash, blockNumber);
+
+      alerts.push({
+        ...baseAlert,
+        id: `${log.transactionHash}-curve-imbalance`,
+        severity: 'high',
+        title: 'Curve Imbalanced Withdrawal',
+        description: formatActorDescription(`Large imbalanced liquidity removal detected`, actorRecord),
+        actorScore: actorRecord.score,
+        actorHistoryCount: actorRecord.eventCount,
+        recentEvents: actorRecord.recentEvents,
+        threatPrefix: getThreatPrefix(actorRecord)
+      });
+    }
+  }
+
+  // 4. Same-Transaction Reentrancy Detection (e.g. Curve July 2023 pattern)
+  const logsByTxAndPool: Record<string, Record<string, string[]>> = {};
+  for (const log of curveLogs) {
+    const decoded = curveInterface.parseLog(log);
+    if (!decoded) continue;
+    const txHash = log.transactionHash;
+    const pool = log.address.toLowerCase();
+    if (!logsByTxAndPool[txHash]) logsByTxAndPool[txHash] = {};
+    if (!logsByTxAndPool[txHash][pool]) logsByTxAndPool[txHash][pool] = [];
+    logsByTxAndPool[txHash][pool].push(decoded.name);
+  }
+
+  for (const [txHash, pools] of Object.entries(logsByTxAndPool)) {
+    for (const [pool, eventNames] of Object.entries(pools)) {
+      const hasWithdraw = eventNames.includes('RemoveLiquidityImbalance');
+      const hasSwap = eventNames.includes('TokenExchange') || eventNames.includes('TokenExchangeUnderlying');
+      
+      // Reentrancy signature: Calling swap and imbalanced withdrawal in same TX on same pool
+      // Often involves multiple TokenExchange events during the withdrawal loop
+      const swapCount = eventNames.filter(name => name.includes('TokenExchange')).length;
+
+      if (hasWithdraw && (hasSwap || swapCount > 1)) {
+        const tx = await getTransaction(txHash, provider);
+        const actor = tx?.from || ZeroAddress;
+        const actorRecord = await updateActor(actor, 100, 'Curve Reentrancy Signature', env, txHash, parseInt(curveLogs.find((l: any) => l.transactionHash === txHash).blockNumber, 16));
+
+        alerts.push({
+          contractId: 'curve-pool',
+          contractName: pool === CURVE_3POOL.toLowerCase() ? 'Curve 3Pool' : pool === CURVE_STETH_POOL.toLowerCase() ? 'Curve stETH Pool' : 'Curve Pool',
+          contractAddress: pool,
+          chain: 'ethereum',
+          protocol: 'curve',
+          txHash: txHash,
+          blockNumber: actorRecord.recentEvents[0].blockNumber,
+          timestamp: now,
+          id: `${txHash}-curve-reentrancy`,
+          severity: 'critical',
+          title: 'CURVE REENTRANCY ATTACK DETECTED',
+          description: formatActorDescription(`Simultaneous imbalanced withdrawal and multiple swaps detected in a single transaction. High probability of reentrancy exploit.`, actorRecord),
+          actorScore: actorRecord.score,
+          actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
+          threatPrefix: getThreatPrefix(actorRecord)
+        });
+      }
+    }
+  }
+
+  // 5. MakerDAO Monitoring
+  const makerLogs = await provider.send('eth_getLogs', [{
+    address: [MAKER_PSM_USDC],
+    fromBlock: fromBlockHex,
+    toBlock: toBlockHex,
+    topics: [
+      [
+        makerPsmInterface.getEvent('SellGem')?.topicHash,
+        makerPsmInterface.getEvent('BuyGem')?.topicHash,
+        makerPsmInterface.getEvent('File')?.topicHash
+      ]
+    ]
+  }]);
+
+  for (const log of makerLogs) {
+    const decoded = makerPsmInterface.parseLog(log);
+    if (!decoded) continue;
+
+    const blockNumber = parseInt(log.blockNumber, 16);
+    const baseAlert = {
+      contractId: 'maker-psm',
+      contractName: 'Maker PSM USDC',
+      contractAddress: MAKER_PSM_USDC,
+      chain: 'ethereum',
+      protocol: 'maker',
+      txHash: log.transactionHash,
+      blockNumber,
+      timestamp: now,
+    };
+
+    if (decoded.name === 'SellGem' || decoded.name === 'BuyGem') {
+      const { value, owner } = decoded.args;
+      // Heuristic: large swap > 5M USDC
+      if (value > 5000000n * 10n**6n) {
+        const tx = await getTransaction(log.transactionHash, provider);
+        const actor = tx?.from || owner;
+        let actorPoints = 15;
+        if (tx && !tx.to) actorPoints += 25;
+        const actorRecord = await updateActor(actor, actorPoints, `Maker PSM ${decoded.name}`, env, log.transactionHash, blockNumber);
+
+        alerts.push({
+          ...baseAlert,
+          id: `${log.transactionHash}-maker-swap`,
+          severity: 'high',
+          title: `Maker PSM Large ${decoded.name === 'SellGem' ? 'Inflow' : 'Outflow'}`,
+          description: formatActorDescription(`Large movement in Maker PSM: ${(Number(value) / 1e6).toFixed(2)} USDC`, actorRecord),
+          actorScore: actorRecord.score,
+          actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
+          threatPrefix: getThreatPrefix(actorRecord)
+        });
+      }
+    } else if (decoded.name === 'File') {
+      const tx = await getTransaction(log.transactionHash, provider);
+      const actor = tx?.from || ZeroAddress;
+      const actorRecord = await updateActor(actor, 40, 'Maker Governance Action', env, log.transactionHash, blockNumber);
+
+      alerts.push({
+        ...baseAlert,
+        id: `${log.transactionHash}-maker-file`,
+        severity: 'high',
+        title: 'Maker Governance Action',
+        description: formatActorDescription(`Maker parameter updated: ${decoded.args.what}`, actorRecord),
+        actorScore: actorRecord.score,
+        actorHistoryCount: actorRecord.eventCount,
+        recentEvents: actorRecord.recentEvents,
+        threatPrefix: getThreatPrefix(actorRecord)
+      });
+    }
+  }
+
+  // 5. Lido Monitoring
+  const lidoLogs = await provider.send('eth_getLogs', [{
+    address: [LIDO_STETH, LIDO_WITHDRAWAL_QUEUE],
+    fromBlock: fromBlockHex,
+    toBlock: toBlockHex,
+    topics: [
+      [
+        lidoInterface.getEvent('PostTotalSharesUpdated')?.topicHash,
+        lidoInterface.getEvent('WithdrawalRequested')?.topicHash
+      ]
+    ]
+  }]);
+
+  for (const log of lidoLogs) {
+    const decoded = lidoInterface.parseLog(log);
+    if (!decoded) continue;
+
+    const blockNumber = parseInt(log.blockNumber, 16);
+    const baseAlert = {
+      contractId: 'lido',
+      contractName: log.address.toLowerCase() === LIDO_STETH.toLowerCase() ? 'Lido stETH' : 'Lido Withdrawal Queue',
+      contractAddress: log.address,
+      chain: 'ethereum',
+      protocol: 'lido',
+      txHash: log.transactionHash,
+      blockNumber,
+      timestamp: now,
+    };
+
+    if (decoded.name === 'PostTotalSharesUpdated') {
+      const { preTotalPooledEther, postTotalPooledEther } = decoded.args;
+      const rebaseRatio = preTotalPooledEther > 0n ? Number(postTotalPooledEther - preTotalPooledEther) / Number(preTotalPooledEther) : 0;
+      
+      // Heuristic: negative rebase or > 0.1% change (standard is ~0.01% daily)
+      if (rebaseRatio < 0 || rebaseRatio > 0.001) {
+        alerts.push({
+          ...baseAlert,
+          id: `${log.transactionHash}-lido-rebase`,
+          severity: 'critical',
+          title: 'Lido Rebase Anomaly',
+          description: `Rebase detected with unexpected ratio: ${(rebaseRatio * 100).toFixed(4)}%. Possible slashing or math bug.`,
+          rebaseRatio
+        });
+      }
+    } else if (decoded.name === 'WithdrawalRequested') {
+      const { amountStETH, requestor } = decoded.args;
+      // Heuristic: large withdrawal > 1000 ETH
+      if (amountStETH > 1000n * 10n**18n) {
+        const tx = await getTransaction(log.transactionHash, provider);
+        const actor = tx?.from || requestor;
+        const actorRecord = await updateActor(actor, 20, 'Lido Large Withdrawal', env, log.transactionHash, blockNumber);
+
+        alerts.push({
+          ...baseAlert,
+          id: `${log.transactionHash}-lido-withdrawal`,
+          severity: 'high',
+          title: 'Lido Large Withdrawal Request',
+          description: formatActorDescription(`Large withdrawal request: ${(Number(amountStETH) / 1e18).toFixed(2)} stETH`, actorRecord),
+          actorScore: actorRecord.score,
+          actorHistoryCount: actorRecord.eventCount,
+          recentEvents: actorRecord.recentEvents,
+          threatPrefix: getThreatPrefix(actorRecord)
+        });
+      }
+    }
+  }
+
+  // 6. Oracle Monitoring
   const correlativeAlerts = alerts.filter(a => 
     a.title.toLowerCase().includes('flashloan') || 
     a.title.toLowerCase().includes('liquidation') ||
