@@ -48,3 +48,9 @@ async function run(env: Env) {
   }
   await env.DEFI_WATCH_KV.put('last_processed_block', toBlock.toString());
 }
+
+export default {
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    await run(env);
+  }
+};
