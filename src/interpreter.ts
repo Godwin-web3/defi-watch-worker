@@ -1,4 +1,4 @@
-import { Env } from './index';
+import { Env } from './types';
 
 export interface InterpretationResult {
   interpretation: string;
