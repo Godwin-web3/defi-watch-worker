@@ -72,6 +72,11 @@ async function handleFlashLoanAlert(alert: any, actor: string, env: Env, provide
     const flowResult = await computeFlowDelta(alert.txHash, actor, provider, flashLoanAsset, flashLoanAmount, flashLoanPremium);
     if (flowResult) {
       alert.classificationTag = flowResult.classificationTag;
+      alert.usdSurplus = flowResult.atomicExecutionSurplus;
+      alert.totalInflow = flowResult.totalInflow;
+      alert.totalOutflow = flowResult.totalOutflow;
+      alert.totalVolume = flowResult.totalVolume;
+      alert.neutralityBreached = flowResult.neutralityBreached;
       if (flowResult.classificationTag === 'CONFIRMED_EXTRACTION') {
         alert.severity = 'critical';
         alert.usdSurplus = flowResult.atomicExecutionSurplus;
@@ -269,23 +274,46 @@ async function sendTelegram(alert: any, env: Env) {
 
   const currentEventDetails = alert.description.split(" | Actor Score:")[0];
 
+  // ── Zone 1: Header ──────────────────────────────────────────
   let header = `🚨 *${threatPrefix}${alert.title.toUpperCase()} ALERT* 🚨`;
-  if (alert.firstTimeActor) {
-    header = `🔴 FIRST-TIME ACTOR + FLASH LOAN: No prior history.\n${header}`;
-  }
+
+  // ── Zone 2: Interpretation ──────────────────────────────────
+  let interpretation = "";
+
   if (alert.classificationTag === 'CONFIRMED_EXTRACTION') {
-    header = `💰 CONFIRMED EXTRACTION: $${alert.usdSurplus?.toFixed(2)} pre-gas surplus\n${header}`;
+    const surplus = alert.usdSurplus?.toFixed(2);
+    const inflow = alert.totalInflow?.toFixed(2);
+    const outflow = alert.totalOutflow?.toFixed(2);
+    interpretation = `💰 *CONFIRMED EXTRACTION*\n` +
+      `An address walked away with *$${surplus}* more than they put in.\n` +
+      `→ Inflow: $${inflow} | Outflow: $${outflow}\n` +
+      (alert.neutralityBreached ? `→ ⚠️ Flash loan neutrality breached — repayment deviated >1%\n` : `→ Flash loan repaid correctly (surplus came from protocol interaction)\n`) +
+      (alert.firstTimeActor ? `→ 🆕 First-time actor — no prior history, debut exploit signature\n` : `→ Known actor with ${alert.actorHistoryCount} prior event(s)\n`);
+  } else if (alert.classificationTag === 'SUSPECTED_ATTEMPT') {
+    const surplus = alert.usdSurplus?.toFixed(2);
+    interpretation = `⚠️ *SUSPECTED ATTEMPT*\n` +
+      `Flash loan executed with a small positive surplus ($${surplus}).\n` +
+      `→ Below extraction threshold but pattern is consistent with a probe or failed attempt.\n` +
+      (alert.neutralityBreached ? `→ ⚠️ Flash loan neutrality breached — repayment deviated >1%\n` : "") +
+      (alert.firstTimeActor ? `→ 🆕 First-time actor — watch for follow-up transactions\n` : "");
+  } else if (alert.firstTimeActor) {
+    interpretation = `🆕 *FIRST-TIME ACTOR*\n` +
+      `A contract with no prior history just executed a flash loan.\n` +
+      `→ No extraction detected yet, but debut flash loans are high-risk signals.\n` +
+      `→ Monitor this address for follow-up activity in next 1–3 blocks.\n`;
   }
 
-  let footer = "";
-  if (alert.classificationTag === 'SUSPECTED_ATTEMPT') {
-    footer += `\n\n⚠️ Suspected extraction attempt.`;
-  }
   if (alert.cascadeRisk) {
-    footer += `\n\n⚠️ CASCADE RISK: Active liquidations in same block.`;
+    interpretation += `\n🌊 *CASCADE RISK*\nHealth factor dropped below 1.05 with active liquidations in same block.\n→ Early signal of a liquidation spiral — monitor collateral positions.\n`;
   }
 
-  const text = `${header}\n\nSeverity: ${alert.severity}\n${actorScoreLine}${historySection}\nDetails: ${currentEventDetails}\nBlock: ${alert.blockNumber}\nTX: [View on Etherscan](https://etherscan.io/tx/${alert.txHash})${footer}`;
+  // ── Zone 3: Raw Signal ──────────────────────────────────────
+  const rawSignal = `📋 *Raw Signal*\n` +
+    `Severity: ${alert.severity} | ${actorScoreLine}` +
+    (historySection ? `\n*Recent activity:*${historySection}` : "") +
+    `\n${currentEventDetails}\nBlock: ${alert.blockNumber}\n[View on Etherscan](https://etherscan.io/tx/${alert.txHash})`;
+
+  const text = [header, interpretation, rawSignal].filter(Boolean).join("\n\n");
 
   try {
     const response = await fetch(url, {
