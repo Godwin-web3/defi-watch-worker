@@ -32,7 +32,7 @@ export async function monitorCurve(env: any, provider: any, fromBlockHex: string
 
     if (decoded.name === 'TokenExchange') {
       const { tokens_sold, tokens_bought } = decoded.args;
-      if (tokens_sold > 1000000n * 10n**18n || tokens_bought > 1000000n * 10n**18n) {
+      if (tokens_sold > 500000n * 10n**18n || tokens_bought > 500000n * 10n**18n) {
         const actorRecord = await updateActor(actor, 10, 'Curve Large Swap', env, log.transactionHash, baseAlert.blockNumber);
         alerts.push({ ...baseAlert, id: `${log.transactionHash}-curve-swap`, severity: 'warning', title: 'Curve Large Swap', description: formatActorDescription(`Large swap detected in Curve pool`, actorRecord), actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord) });
       }

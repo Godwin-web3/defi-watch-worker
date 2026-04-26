@@ -51,7 +51,7 @@ export async function monitorAave(env: any, provider: JsonRpcProvider, fromBlock
     if (decoded.name === 'Borrow') {
       const { reserve, amount, user } = decoded.args;
       assetsToMonitor.add(reserve);
-      if (usdValue > 1000) {
+      if (usdValue > 250000) {
         const pool = new Contract(AAVE_V3_POOL, [
           'function getUserAccountData(address user) view returns (uint256, uint256, uint256, uint256, uint256, uint256)'
         ], provider);
