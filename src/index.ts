@@ -311,7 +311,7 @@ async function run(env: Env) {
     if (decoded.name === 'Borrow') {
       const { reserve, amount, user } = decoded.args;
       assetsToMonitor.add(reserve);
-      if (usdValue > 1000) {
+      if (usdValue > 250000) {
         const pool = new Contract(AAVE_V3_POOL, [
           'function getUserAccountData(address user) view returns (uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor)'
         ], provider);
