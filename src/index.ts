@@ -332,7 +332,7 @@ async function run(env: Env) {
     fromBlock = currentBlock - 1000;
   }
 
-  const toBlock = currentBlock;
+  const toBlock = currentBlock - 2;
   const fromBlockHex = '0x' + fromBlock.toString(16);
   const toBlockHex = '0x' + toBlock.toString(16);
 
