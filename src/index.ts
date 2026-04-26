@@ -695,10 +695,10 @@ async function run(env: Env) {
   }
 
   // 4. Save to Supabase and Notify Telegram
+  await saveToSupabase(alerts, env);
   for (const alert of alerts) {
-    await saveToSupabase(alert, env); // saveToSupabase defined in index.ts
     if (alert.severity === 'critical' || alert.severity === 'emergency' || alert.severity === 'high') {
-      await sendTelegram(alert, env); // sendTelegram defined in index.ts
+      await sendTelegram(alert, env);
     }
   }
 
