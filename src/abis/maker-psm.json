@@ -27,5 +27,21 @@
     ],
     "name": "BuyGem",
     "type": "event"
+  },
+  {
+    "anonymous": true,
+    "inputs": [
+      { "indexed": true, "name": "usr", "type": "address" }
+    ],
+    "name": "Rely",
+    "type": "event"
+  },
+  {
+    "anonymous": true,
+    "inputs": [
+      { "indexed": true, "name": "usr", "type": "address" }
+    ],
+    "name": "Deny",
+    "type": "event"
   }
 ]

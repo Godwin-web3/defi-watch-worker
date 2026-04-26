@@ -24,5 +24,19 @@
     ],
     "anonymous": false,
     "type": "event"
+  },
+  {
+    "name": "StakingPaused",
+    "inputs": [],
+    "anonymous": false,
+    "type": "event"
+  },
+  {
+    "name": "SetMaxShareRate",
+    "inputs": [
+      {"name": "maxShareRate", "type": "uint256", "indexed": false}
+    ],
+    "anonymous": false,
+    "type": "event"
   }
 ]

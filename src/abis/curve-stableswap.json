@@ -54,5 +54,26 @@
     ],
     "anonymous": false,
     "type": "event"
+  },
+  {
+    "name": "KillGauge",
+    "inputs": [
+      {"type": "address", "name": "gauge", "indexed": true},
+      {"type": "bool", "name": "is_killed", "indexed": false}
+    ],
+    "anonymous": false,
+    "type": "event"
+  },
+  {
+    "name": "Pause",
+    "inputs": [],
+    "anonymous": false,
+    "type": "event"
+  },
+  {
+    "name": "Unpause",
+    "inputs": [],
+    "anonymous": false,
+    "type": "event"
   }
 ]
