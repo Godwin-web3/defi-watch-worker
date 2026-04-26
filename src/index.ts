@@ -130,7 +130,8 @@ async function saveToSupabase(alert: any, env: Env) {
         'apikey': env.SUPABASE_SERVICE_KEY,
         'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
         'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
+        'Prefer': 'return=minimal',
+        'Connection': 'close'
       },
       body: JSON.stringify(alert)
     });
