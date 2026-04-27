@@ -6,6 +6,7 @@ import { monitorMaker } from './protocols/maker.js';
 import { monitorLido } from './protocols/lido.js';
 import { monitorOracle } from './protocols/oracle.js';
 import * as dotenv from 'dotenv';
+import http from 'http';
 
 // Import utility functions from utils.ts
 import { getTransaction, getActorRecord, updateActor, getThreatPrefix, formatActorDescription, calculatePriceImpact, getUsdValue, AAVE_ORACLE, getKV, putKV, supabase } from './utils.js';
@@ -14,6 +15,14 @@ import { computeFlowDelta } from './flowTracker.js';
 import { ActorRecord } from './types.js';
 
 dotenv.config();
+
+const port = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('OK');
+}).listen(port, () => {
+  console.log(`Health check server listening on port ${port}`);
+});
 
 const AAVE_V3_POOL = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
 const UNISWAP_V3_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
@@ -555,6 +564,8 @@ async function run() {
 
   await putKV('last_processed_block', toBlock.toString());
 }
+
+
 
 // Node.js setInterval execution
 console.log('Starting DeFi Watch Worker (Node.js)...');
