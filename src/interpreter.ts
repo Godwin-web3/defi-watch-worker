@@ -1,4 +1,4 @@
-import { Env } from './types';
+import { Env } from './types.js';
 
 export interface InterpretationResult {
   interpretation: string;

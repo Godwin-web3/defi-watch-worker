@@ -1,5 +1,5 @@
 import { Interface, JsonRpcProvider, getAddress } from 'ethers';
-import { getUsdValue } from './utils';
+import { getUsdValue } from './utils.js';
 
 const ERC20_ABI = [
   {

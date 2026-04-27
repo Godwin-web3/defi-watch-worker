@@ -1,5 +1,5 @@
 import { Interface, ZeroAddress } from 'ethers';
-import curveAbi from '../abis/curve-stableswap.json';
+import curveAbi from '../abis/curve-stableswap.json' with { type: 'json' };
 
 const CURVE_3POOL = '0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7';
 const CURVE_STETH_POOL = '0xDC24316b9AE028F1497c275EB9192a3Ea0f67022';

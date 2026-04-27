@@ -1,5 +1,5 @@
 import { Contract, ZeroAddress } from 'ethers';
-import { AAVE_ORACLE } from '../utils';
+import { AAVE_ORACLE } from '../utils.js';
 
 export async function monitorOracle(env: any, provider: any, toBlock: number, now: number, alerts: any[], assetsToMonitor: Set<string>, checkOraclePrice: any, checkChainlinkDivergence: any, correlativeAlerts: any[]) {
   for (const asset of assetsToMonitor) {

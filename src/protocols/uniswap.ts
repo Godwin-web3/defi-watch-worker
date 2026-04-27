@@ -1,5 +1,5 @@
 import { Interface, ZeroAddress } from 'ethers';
-import uniAbi from '../abis/uniswap-v3.json';
+import uniAbi from '../abis/uniswap-v3.json' with { type: 'json' };
 
 const UNISWAP_V3_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
 const POOL_CREATED_TOPIC = '0x783cca692c694383c27e8a93911c1e57c669177a6411516f4d857d4722513f56';

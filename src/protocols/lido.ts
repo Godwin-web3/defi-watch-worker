@@ -1,5 +1,5 @@
 import { Interface, ZeroAddress } from 'ethers';
-import lidoAbi from '../abis/lido.json';
+import lidoAbi from '../abis/lido.json' with { type: 'json' };
 
 const LIDO_STETH = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84';
 const LIDO_WITHDRAWAL_QUEUE = '0x889edC2BDE944250596279FE1127e13d8212Ad1b';

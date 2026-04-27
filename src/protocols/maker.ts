@@ -1,5 +1,5 @@
 import { Interface, ZeroAddress } from 'ethers';
-import makerAbi from '../abis/maker-psm.json';
+import makerAbi from '../abis/maker-psm.json' with { type: 'json' };
 
 const MAKER_GOV = '0x0a390ced42a6320577002047805d21c97a553245';
 const MAKER_PSM_USDC = '0x89B78CfA322F6C573a15239C73F6c1242e8b92ad';

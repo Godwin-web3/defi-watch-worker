@@ -2,18 +2,19 @@
 	"name": "defi-watch-worker",
 	"version": "0.0.0",
 	"private": true,
+	"type": "module",
 	"scripts": {
-		"deploy": "wrangler deploy",
-		"dev": "wrangler dev --test-scheduled",
-		"start": "wrangler dev --test-scheduled",
-		"cf-typegen": "wrangler types"
+		"build": "tsc",
+		"start": "node dist/index.js",
+		"dev": "tsc -w"
 	},
 	"dependencies": {
+		"@supabase/supabase-js": "^2.43.4",
+		"dotenv": "^16.4.5",
 		"ethers": "^6.13.5"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20241218.0",
-		"typescript": "^5.5.2",
-		"wrangler": "^3.101.0"
+		"@types/node": "^20.19.39",
+		"typescript": "^5.5.2"
 	}
 }

@@ -1,7 +1,7 @@
 import { Interface, JsonRpcProvider, Contract, ZeroAddress, formatUnits } from 'ethers';
-import aaveAbi from '../abis/aave-v3.json';
-import { getUsdValue } from '../utils';
-import { computeFlowDelta } from '../flowTracker';
+import aaveAbi from '../abis/aave-v3.json' with { type: 'json' };
+import { getUsdValue } from '../utils.js';
+import { computeFlowDelta } from '../flowTracker.js';
 
 const AAVE_V3_POOL = '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2';
 const aaveInterface = new Interface(aaveAbi);

@@ -1,5 +1,18 @@
-import { JsonRpcProvider, Contract, ZeroAddress, Interface } from 'ethers';
-import { Env, ActorRecord, ActorEvent } from './types'; // Import types
+import { JsonRpcProvider, Contract, ZeroAddress } from 'ethers';
+import { ActorRecord, ActorEvent } from './types.js';
+import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
+
+const supabaseUrl = process.env.SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || '';
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.warn('Supabase credentials missing in environment variables');
+}
+
+export const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // --- Local Cache for getTransaction ---
 const txCache = new Map<string, any>();
@@ -17,27 +30,67 @@ export async function getTransaction(txHash: string, provider: JsonRpcProvider) 
   }
 }
 
-export async function getActorRecord(address: string, env: Env): Promise<ActorRecord> {
-  const data = await env.DEFI_WATCH_KV.get(`actor:${address.toLowerCase()}`);
-  if (data) {
-    const record = JSON.parse(data);
-    // Ensure recentEvents is an array of objects, not strings, if compatibility issues arise.
-    if (record.recentEvents && record.recentEvents.length > 0 && typeof record.recentEvents[0] === 'string') {
-      record.recentEvents = [];
+// Supabase KV-like helpers for monitor_state
+export async function getKV(key: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('monitor_state')
+    .select('value')
+    .eq('key', key)
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+      console.error(`Error getting KV for key ${key}:`, error);
     }
-    return record;
+    return null;
   }
+  return data?.value;
+}
+
+export async function putKV(key: string, value: string): Promise<void> {
+  const { error } = await supabase
+    .from('monitor_state')
+    .upsert({ key, value, updated_at: Date.now() });
+
+  if (error) {
+    console.error(`Error putting KV for key ${key}:`, error);
+  }
+}
+
+export async function getActorRecord(address: string): Promise<ActorRecord> {
+  const { data, error } = await supabase
+    .from('actor_memory')
+    .select('*')
+    .eq('address', address.toLowerCase())
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') {
+      console.error(`Error getting actor record for ${address}:`, error);
+    }
+    return {
+      score: 0,
+      firstSeen: Date.now(),
+      lastSeen: Date.now(),
+      eventCount: 0,
+      recentEvents: []
+    };
+  }
+
   return {
-    score: 0,
-    firstSeen: Date.now(),
-    lastSeen: Date.now(),
-    eventCount: 0,
-    recentEvents: []
+    address: data.address,
+    score: data.score,
+    firstSeen: Date.now(), // Table doesn't have firstSeen, using current for new or just ignoring if not critical
+    lastSeen: new Date(data.last_seen).getTime(),
+    eventCount: data.event_count,
+    recentEvents: data.recent_events || [],
+    confirmedExtractions: data.confirmed_extractions,
+    totalExtractedUsd: data.total_extracted_usd
   };
 }
 
-export async function updateActor(address: string, additionalPoints: number, eventDescription: string, env: Env, txHash: string, blockNumber: number): Promise<ActorRecord> {
-  const record = await getActorRecord(address, env);
+export async function updateActor(address: string, additionalPoints: number, eventDescription: string, env: any, txHash: string, blockNumber: number): Promise<ActorRecord> {
+  const record = await getActorRecord(address);
   let pointsToAdd = additionalPoints;
 
   if (record.score > 30) {
@@ -55,7 +108,22 @@ export async function updateActor(address: string, additionalPoints: number, eve
   });
   if (record.recentEvents.length > 10) record.recentEvents.pop();
 
-  await env.DEFI_WATCH_KV.put(`actor:${address.toLowerCase()}`, JSON.stringify(record));
+  const { error } = await supabase
+    .from('actor_memory')
+    .upsert({
+      address: address.toLowerCase(),
+      score: record.score,
+      event_count: record.eventCount,
+      confirmed_extractions: record.confirmedExtractions || 0,
+      total_extracted_usd: record.totalExtractedUsd || 0,
+      last_seen: record.lastSeen,
+      recent_events: record.recentEvents
+    });
+
+  if (error) {
+    console.error(`Error updating actor record for ${address}:`, error);
+  }
+
   return record;
 }
 
@@ -70,24 +138,10 @@ export function formatActorDescription(description: string, record: ActorRecord)
   return `${description} | Actor Score: ${record.score} | History: ${record.eventCount}`;
 }
 
-// --- Constants and Interfaces needed for utility functions ---
-// UNISWAP_V3_FACTORY is used by calculatePriceImpact.
 const UNISWAP_V3_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
 
-// calculatePriceImpact requires `uniswapInterface`. This interface definition is not included here
-// as it depends on an ABI file ('./abis/uniswap-v3.json'). For full functionality,
-// `uniswapInterface` would need to be defined or imported here as well.
-// The function signature below is kept as is, assuming `uniswapInterface` will be available in scope
-// where this function is called, or passed as an argument if refactored.
-
-export async function calculatePriceImpact(poolAddress: string, newSqrtPriceX96: bigint, blockNumber: number, provider: JsonRpcProvider /*, uniswapInterface: Interface */): Promise<number> {
+export async function calculatePriceImpact(poolAddress: string, newSqrtPriceX96: bigint, blockNumber: number, provider: JsonRpcProvider): Promise<number> {
   try {
-    // WARNING: This function requires `uniswapInterface` to be defined or imported.
-    // For demonstration purposes, using a placeholder or assuming it's available.
-    // A complete solution would involve defining uniswapInterface here or importing it.
-    // Example using a hypothetical uniswapInterface:
-    // const pool = new Contract(poolAddress, uniswapInterface.getAbi('Swap'), provider); // Placeholder
-    // For now, let's assume the ABI structure for `slot0` is known:
     const pool = new Contract(poolAddress, ['function slot0() view returns (uint160, int24, uint16, uint16, uint16, uint8, bool)'], provider);
     const [oldSqrtPriceX96] = await pool.slot0({ blockTag: blockNumber - 1 });
     
