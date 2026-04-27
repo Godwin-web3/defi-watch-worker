@@ -13,6 +13,7 @@ import { getTransaction, getActorRecord, updateActor, getThreatPrefix, formatAct
 import { computeFlowDelta } from './flowTracker.js';
 // Import types from types.ts
 import { ActorRecord } from './types.js';
+import { normalizeAlert } from './alerts.js';
 
 dotenv.config();
 
@@ -137,9 +138,24 @@ async function checkChainlinkDivergence(assetAddress: string, aavePrice: bigint,
   }
 }
 
-async function saveToSupabase(alert: any) {
-  const { actorHistoryCount, recentEvents, threatPrefix, firstTimeActor, cascadeRisk, ...cleanAlert } = alert;
-  const { error } = await supabase.from('alerts').insert(cleanAlert);
+async function saveToSupabase(input: any) {
+  if (input === null || input === undefined) return;
+  const items = Array.isArray(input) ? input : [input];
+  const normalizedItems = [];
+
+  for (const item of items) {
+    if (!item) continue;
+    const normalized = normalizeAlert(item);
+    if (normalized) {
+      normalizedItems.push(normalized);
+    } else {
+      console.error("INVALID ALERT: missing required fields or failed normalization", item);
+    }
+  }
+
+  if (normalizedItems.length === 0) return;
+
+  const { error } = await supabase.from('alerts').insert(normalizedItems);
   if (error) {
     console.error('Failed to save to Supabase:', error);
   }
