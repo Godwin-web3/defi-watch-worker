@@ -1,11 +1,22 @@
 import { Contract, ZeroAddress } from 'ethers';
 import { AAVE_ORACLE } from '../utils.js';
 
-export async function monitorOracle(env: any, provider: any, toBlock: number, now: number, alerts: any[], assetsToMonitor: Set<string>, checkOraclePrice: any, checkChainlinkDivergence: any, correlativeAlerts: any[]) {
+export async function monitorOracle(
+  env: any, 
+  provider: any, 
+  toBlock: number, 
+  now: number, 
+  alerts: any[], 
+  assetsToMonitor: Set<string>, 
+  checkOraclePrice: (asset: string) => Promise<any>, 
+  checkChainlinkDivergence: (asset: string, price: bigint) => Promise<any>, 
+  correlativeAlerts: any[]
+) {
   for (const asset of assetsToMonitor) {
-    const oracleInfo = await checkOraclePrice(asset, env, provider);
+    const oracleInfo = await checkOraclePrice(asset);
     if (!oracleInfo) continue;
-    const chainlinkInfo = await checkChainlinkDivergence(asset, oracleInfo.currentPrice, provider);
+    
+    const chainlinkInfo = oracleInfo.deviation > 3 ? await checkChainlinkDivergence(asset, oracleInfo.currentPrice) : null;
 
     let severity = '', type = '';
     if (oracleInfo.deviation > 10) { severity = 'critical'; type = 'Oracle_Price_Spike'; }
@@ -19,7 +30,23 @@ export async function monitorOracle(env: any, provider: any, toBlock: number, no
         title = 'ORACLE ATTACK IN PROGRESS';
         description += ` | Triggered alongside: ${correlativeAlerts.map(a => a.title).join(', ')}`;
       }
-      alerts.push({ id: `oracle-${asset}-${toBlock}`, contractId: 'aave-oracle', contractName: 'Aave Oracle', contractAddress: AAVE_ORACLE, chain: 'ethereum', protocol: 'aave', severity, type, title, description, blockNumber: toBlock, timestamp: now, txHash: 'N/A', deviation: oracleInfo.deviation, chainlinkDivergence: chainlinkInfo?.divergence });
+      alerts.push({ 
+        id: `oracle-${asset}-${toBlock}`, 
+        contractId: 'aave-oracle', 
+        contractName: 'Aave Oracle', 
+        contractAddress: AAVE_ORACLE, 
+        chain: 'ethereum', 
+        protocol: 'aave', 
+        severity, 
+        type, 
+        title, 
+        description, 
+        blockNumber: toBlock, 
+        timestamp: now, 
+        txHash: 'N/A', 
+        deviation: oracleInfo.deviation, 
+        chainlinkDivergence: chainlinkInfo?.divergence 
+      });
     }
   }
 }

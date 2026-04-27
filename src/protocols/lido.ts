@@ -19,22 +19,38 @@ export async function monitorLido(env: any, provider: any, fromBlockHex: string,
   for (const log of lidoLogs) {
     const decoded = lidoInterface.parseLog(log);
     if (!decoded) continue;
+    const blockNumber = parseInt(log.blockNumber, 16);
     const tx = await getTransaction(log.transactionHash, provider);
     const actor = tx?.from || ZeroAddress;
-    activityTracker.set(actor, (activityTracker.get(actor) || 0) + 1);
     
     const baseAlert = {
       contractId: 'lido', contractName: log.address.toLowerCase() === LIDO_STETH.toLowerCase() ? 'Lido stETH' : 'Lido Withdrawal Queue',
-      contractAddress: log.address, chain: 'ethereum', protocol: 'lido', txHash: log.transactionHash, blockNumber: parseInt(log.blockNumber, 16), timestamp: now,
+      contractAddress: log.address, chain: 'ethereum', protocol: 'lido', txHash: log.transactionHash, blockNumber, timestamp: now,
     };
 
     if (['StakingPaused', 'SetMaxShareRate'].includes(decoded.name)) {
-      const actorRecord = await updateActor(actor, 80, `Lido Admin Action: ${decoded.name}`, env, log.transactionHash, baseAlert.blockNumber);
-      alerts.push({ ...baseAlert, id: `${log.transactionHash}-lido-admin`, severity: 'high', title: `Lido Admin Action: ${decoded.name}`, description: formatActorDescription(`Lido governance event triggered: ${decoded.name}`, actorRecord), actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord) });
+      const actorRecord = await updateActor(actor, 80, `Lido Admin Action: ${decoded.name}`, env, log.transactionHash, blockNumber);
+      alerts.push({ 
+        ...baseAlert, 
+        id: `${log.transactionHash}-lido-admin`, 
+        severity: 'high', 
+        type: 'LIDO_ADMIN_ACTION',
+        title: `Lido Admin Action: ${decoded.name}`, 
+        description: formatActorDescription(`Lido governance event triggered: ${decoded.name}`, actorRecord), 
+        actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord) 
+      });
     } else if (decoded.name === 'WithdrawalRequested') {
       if (decoded.args.amountStETH > 1000n * 10n**18n) {
-        const actorRecord = await updateActor(actor, 20, 'Lido Large Withdrawal', env, log.transactionHash, baseAlert.blockNumber);
-        alerts.push({ ...baseAlert, id: `${log.transactionHash}-lido-withdrawal`, severity: 'high', title: 'Lido Large Withdrawal Request', description: formatActorDescription(`Large withdrawal request: ${(Number(decoded.args.amountStETH) / 1e18).toFixed(2)} stETH`, actorRecord), actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord) });
+        const actorRecord = await updateActor(actor, 20, 'Lido Large Withdrawal', env, log.transactionHash, blockNumber);
+        alerts.push({ 
+          ...baseAlert, 
+          id: `${log.transactionHash}-lido-withdrawal`, 
+          severity: 'high', 
+          type: 'LIDO_LARGE_WITHDRAWAL',
+          title: 'Lido Large Withdrawal Request', 
+          description: formatActorDescription(`Large withdrawal request: ${(Number(decoded.args.amountStETH) / 1e18).toFixed(2)} stETH`, actorRecord), 
+          actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord) 
+        });
       }
     }
   }

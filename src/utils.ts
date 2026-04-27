@@ -162,8 +162,14 @@ export async function getUsdValue(asset: string, amount: bigint, provider: any, 
   try {
     const { Contract } = await import('ethers');
     const oracle = new Contract(AAVE_ORACLE, ['function getAssetPrice(address) view returns (uint256)'], provider);
-    const price = await oracle.getAssetPrice(asset, { blockTag: blockNumber });
-    return Number(amount) * Number(price) / 1e26;
+    const token = new Contract(asset, ['function decimals() view returns (uint8)'], provider);
+    
+    const [price, decimals] = await Promise.all([
+      oracle.getAssetPrice(asset, { blockTag: blockNumber }),
+      token.decimals({ blockTag: blockNumber }).catch(() => 18)
+    ]);
+
+    return Number(amount) * Number(price) / (10 ** (Number(decimals) + 8));
   } catch (e) {
     return 0;
   }
