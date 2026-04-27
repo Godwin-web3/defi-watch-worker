@@ -305,6 +305,7 @@ async function run() {
 
         alerts.push({
           ...baseAlert, id: `${log.transactionHash}-aave-borrow`, severity: 'high', title: 'Aave V3 Large Borrow',
+          type: 'AAVE_LARGE_BORROW',
           description: formatActorDescription(`Large borrow: ${usdValue.toFixed(2)} USD by ${user} | Health Factor: ${healthFactor.toFixed(2)} | LTV: ${(ltv / 100).toFixed(0)}% | First time borrower: ${isFirstTime ? 'yes' : 'no'}`, actorRecord),
           actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord), cascadeRisk
         });
@@ -319,6 +320,7 @@ async function run() {
 
       alerts.push({
         ...baseAlert, id: `${log.transactionHash}-aave-liq`, severity: 'high', title: 'Aave V3 Liquidation',
+        type: 'AAVE_LIQUIDATION',
         description: formatActorDescription(`Liquidation detected for user ${user}`, actorRecord),
         actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord)
       });
@@ -337,6 +339,7 @@ async function run() {
       if (isNewContract) {
         const alert: any = {
           ...baseAlert, id: `${log.transactionHash}-aave-flash`, severity: 'critical', title: 'Aave V3 Suspicious FlashLoan',
+          type: 'AAVE_SUSPICIOUS_FLASHLOAN',
           description: formatActorDescription(`FlashLoan by new contract (<7 days): ${initiator}`, actorRecord),
           actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord),
           flashLoanAmount: amount, flashLoanPremium: premium, firstTimeActor: actorRecord.eventCount === 1
@@ -374,6 +377,7 @@ async function run() {
       const actorRecord = await updateActor(actor, actorPoints, 'Aave Exploit Pattern (Flash+Borrow+Liq)', {}, txHash, txLogs[0].blockNumber);
       const alert: any = {
         ...baseAlert, id: `${txHash}-aave-exploit-pattern`, severity: 'critical', title: 'Aave V3 Exploit Pattern',
+        type: 'AAVE_EXPLOIT_PATTERN',
         description: formatActorDescription(`FlashLoan, Borrow, and Liquidation detected in same transaction: ${txHash}`, actorRecord),
         actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord), firstTimeActor: actorRecord.eventCount === 1
       };
@@ -384,6 +388,7 @@ async function run() {
       const actorRecord = await updateActor(actor, actorPoints, 'Aave FlashLoan + Borrow', {}, txHash, txLogs[0].blockNumber);
       const alert: any = {
         ...baseAlert, id: `${txHash}-aave-flash-borrow`, severity: 'high', title: 'Aave V3 FlashLoan + Borrow',
+        type: 'AAVE_FLASH_BORROW',
         description: formatActorDescription(`FlashLoan and Borrow detected in same transaction: ${txHash}`, actorRecord),
         actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord), firstTimeActor: actorRecord.eventCount === 1
       };
@@ -394,6 +399,7 @@ async function run() {
       const actorRecord = await updateActor(actor, actorPoints, 'Aave FlashLoan + Liquidation', {}, txHash, txLogs[0].blockNumber);
       const alert: any = {
         ...baseAlert, id: `${txHash}-aave-flash-liq`, severity: 'critical', title: 'Aave V3 FlashLoan + Liquidation',
+        type: 'AAVE_FLASH_LIQUIDATION',
         description: formatActorDescription(`FlashLoan and Liquidation detected in same transaction: ${txHash}`, actorRecord),
         actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord), firstTimeActor: actorRecord.eventCount === 1
       };
@@ -432,6 +438,7 @@ async function run() {
         const actorRecord = await updateActor(actor, actorPoints, 'Aave Liquidation Cascade', {}, liquidations[0].transactionHash, blockNumber);
         alerts.push({
           ...baseAlert, id: `${blockNumber}-aave-liq-cascade`, txHash: liquidations[0].transactionHash, severity: 'critical', title: 'Aave V3 Liquidation Cascade',
+          type: 'AAVE_LIQUIDATION_CASCADE',
           description: formatActorDescription(`${liquidations.length} liquidations detected in block ${blockNumber}`, actorRecord),
           actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord)
         });
@@ -441,6 +448,7 @@ async function run() {
         const actorRecord = await updateActor(actor, actorPoints, 'Aave Borrow + Liquidation Block', {}, triggerLog.transactionHash, blockNumber);
         alerts.push({
           ...baseAlert, id: `${blockNumber}-aave-borrow-liq-block`, txHash: triggerLog.transactionHash, severity: 'critical', title: 'Aave V3 Borrow + Liquidation Block',
+          type: 'AAVE_BORROW_LIQ_BLOCK',
           description: formatActorDescription(`Large borrow (>$100k) and liquidation detected in same block ${blockNumber}`, actorRecord),
           actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord)
         });
@@ -484,6 +492,7 @@ async function run() {
 
         alerts.push({
           ...baseAlert, id: `${log.transactionHash}-uni-swap`, severity: 'warning', title: 'Uniswap V3 High Impact Swap',
+          type: 'UNISWAP_HIGH_IMPACT_SWAP',
           description: formatActorDescription(`High price impact swap: ${(impact * 100).toFixed(2)}%`, actorRecord),
           actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord)
         });
@@ -505,6 +514,7 @@ async function run() {
 
         alerts.push({
           ...baseAlert, id: `${log.transactionHash}-uni-mintburn`, severity: 'high', title: 'Uniswap V3 Mint & Burn Spike',
+          type: 'UNISWAP_MINT_BURN_SPIKE',
           description: formatActorDescription(`Mint and Burn in same block by ${owner}`, actorRecord),
           actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord)
         });
