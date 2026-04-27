@@ -138,7 +138,8 @@ async function checkChainlinkDivergence(assetAddress: string, aavePrice: bigint,
 }
 
 async function saveToSupabase(alert: any) {
-  const { error } = await supabase.from('alerts').insert(alert);
+  const { actorHistoryCount, recentEvents, threatPrefix, firstTimeActor, cascadeRisk, ...cleanAlert } = alert;
+  const { error } = await supabase.from('alerts').insert(cleanAlert);
   if (error) {
     console.error('Failed to save to Supabase:', error);
   }

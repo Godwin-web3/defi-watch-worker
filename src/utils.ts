@@ -50,7 +50,7 @@ export async function getKV(key: string): Promise<string | null> {
 export async function putKV(key: string, value: string): Promise<void> {
   const { error } = await supabase
     .from('monitor_state')
-    .upsert({ key, value, updated_at: Date.now() });
+    .upsert({ key, value, updated_at: new Date().toISOString() });
 
   if (error) {
     console.error(`Error putting KV for key ${key}:`, error);
