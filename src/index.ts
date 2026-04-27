@@ -134,7 +134,7 @@ async function run() {
   }
 
   if (fromBlock > currentBlock) return;
-  const toBlock = currentBlock - 1;
+  const toBlock = Math.max(fromBlock, currentBlock - 1);
   const fromBlockHex = '0x' + fromBlock.toString(16);
   const toBlockHex = '0x' + toBlock.toString(16);
 
