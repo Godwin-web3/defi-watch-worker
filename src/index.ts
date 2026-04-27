@@ -648,7 +648,7 @@ async function run(env: Env) {
     const oracleInfo = await checkOraclePrice(asset, env, provider); // checkOraclePrice defined in index.ts
     if (!oracleInfo) continue;
 
-    const chainlinkInfo = await checkChainlinkDivergence(asset, oracleInfo.currentPrice, provider); // checkChainlinkDivergence defined in index.ts
+    const chainlinkInfo = oracleInfo.deviation > 3 ? await checkChainlinkDivergence(asset, oracleInfo.currentPrice, provider) : null;
 
     let severity = '';
     let type = '';
