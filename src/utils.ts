@@ -169,7 +169,8 @@ export async function getUsdValue(asset: string, amount: bigint, provider: any, 
       token.decimals({ blockTag: blockNumber }).catch(() => 18)
     ]);
 
-    return Number(amount) * Number(price) / (10 ** (Number(decimals) + 8));
+    const decimalsNum = Number(decimals);
+    return Number(BigInt(amount) * BigInt(price) / BigInt(10 ** decimalsNum)) / 1e8;
   } catch (e) {
     return 0;
   }
