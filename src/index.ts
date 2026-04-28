@@ -179,8 +179,8 @@ console.log('Starting DeFi Watch Worker...');
 startMempoolMonitor();
 startUniswapMempoolMonitor();
 startCurveMempoolMonitor();
-const wsProvider = process.env.WS_RPC_URL ? new WebSocketProvider(process.env.WS_RPC_URL) : null;
-if (wsProvider) monitorAaveMempool(wsProvider, process.env.TELEGRAM_BOT_TOKEN!, process.env.TELEGRAM_CHAT_ID!);
+const wsProvider = new WebSocketProvider('wss://ethereum-rpc.publicnode.com');
+monitorAaveMempool(wsProvider, process.env.TELEGRAM_BOT_TOKEN!, process.env.TELEGRAM_CHAT_ID!);
 run().catch(console.error);
 setInterval(() => {
   run().catch(console.error);
