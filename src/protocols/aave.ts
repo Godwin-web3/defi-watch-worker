@@ -54,7 +54,7 @@ export async function monitorAave(env: any, provider: JsonRpcProvider, fromBlock
         const ltv = currentData ? Number(currentData.ltv) : 0;
         const isFirstTime = previousData ? previousData.totalCollateralBase === 0n : true;
 
-        let actorPoints = 0;
+        let actorPoints = 10;
         if (isFirstTime) actorPoints += 15;
         if (healthFactor < 1.5) actorPoints += 20;
         if (ltv > 80) actorPoints += 15;
@@ -68,13 +68,13 @@ export async function monitorAave(env: any, provider: JsonRpcProvider, fromBlock
           ...baseAlert, id: `${log.transactionHash}-aave-borrow`, severity: 'high', title: 'Aave V3 Large Borrow',
           type: 'AAVE_LARGE_BORROW',
           description: formatActorDescription(`Large borrow: ${usdValue.toFixed(2)} USD by ${user} | Health Factor: ${healthFactor.toFixed(2)} | LTV: ${(ltv / 100).toFixed(0)}% | First time borrower: ${isFirstTime ? 'yes' : 'no'}`, actorRecord),
-          actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord)
-        });
-      }
+          actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord),
+          evidence: { healthFactor, ltv, isFirstTime, usdValue }
+        });      }
     } else if (decoded.name === 'LiquidationCall') {
       const { user } = decoded.args;
       const tx = await getTransaction(log.transactionHash, provider);
-      let actorPoints = 0;
+      let actorPoints = 10;
       if (tx && !tx.to) actorPoints += 25;
       
       const actorRecord = await updateActor(user, actorPoints, 'Aave Liquidation', env, log.transactionHash, blockNumber);

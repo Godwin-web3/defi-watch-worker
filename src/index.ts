@@ -105,7 +105,7 @@ async function sendTelegram(alert: any) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
-  if ((alert.actorScore || 0) <= 30 && alert.severity !== 'critical') return;
+  if ((alert.actorScore || 0) <= 30 && alert.severity !== 'critical' && !alert.firstTimeActor) return;
 
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   const threatPrefix = alert.threatPrefix || "";
