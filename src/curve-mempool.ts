@@ -292,6 +292,12 @@ export function startCurveMempoolMonitor() {
     reconnecting = true;
     console.log('[curve-mempool] Connecting...');
     ws = new WebSocket(WS_URL);
+    ws.on("error", () => {});
+    ws.on("unexpected-response", (req, res) => {
+      console.warn(`[curve-mempool] Unexpected response: ${res.statusCode}`);
+      reconnecting = false;
+      setTimeout(connect, res.statusCode === 429 ? 10000 : RECONNECT_DELAY_MS);
+    });
 
     ws.on('open', () => {
       reconnecting  = false;

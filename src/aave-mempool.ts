@@ -206,6 +206,12 @@ export function startAaveMempoolMonitor() {
     reconnecting = true;
     console.log('[aave-mempool] Connecting...');
     ws = new WebSocket(WS_URL);
+    ws.on("error", () => {});
+    ws.on("unexpected-response", (req, res) => {
+      console.warn("[aave-mempool] Unexpected response:", res.statusCode);
+      reconnecting = false;
+      setTimeout(connect, res.statusCode === 429 ? 10000 : RECONNECT_DELAY_MS);
+    });
 
     ws.on('open', () => {
       reconnecting  = false;
