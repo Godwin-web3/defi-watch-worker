@@ -10,7 +10,8 @@ import http from 'http';
 
 import { getTransaction, updateActor, getThreatPrefix, formatActorDescription, calculatePriceImpact, getKV, putKV, supabase, AAVE_ORACLE } from './utils.js';
 import { computeFlowDelta } from './flowTracker.js';
-import { startMempoolMonitor, monitorAaveMempool } from './mempool.js';
+import { startMempoolMonitor } from './mempool.js';
+import { startAaveMempoolMonitor } from './aave-mempool.js';
 import { startUniswapMempoolMonitor } from './uniswap-mempool.js';
 import { startCurveMempoolMonitor } from './curve-mempool.js';
 import { normalizeAlert } from './alerts.js';
@@ -177,10 +178,10 @@ async function run() {
 
 console.log('Starting DeFi Watch Worker...');
 startMempoolMonitor();
+startAaveMempoolMonitor();
 startUniswapMempoolMonitor();
 startCurveMempoolMonitor();
-const wsProvider = new WebSocketProvider('wss://ethereum-rpc.publicnode.com');
-monitorAaveMempool(wsProvider, process.env.TELEGRAM_BOT_TOKEN!, process.env.TELEGRAM_CHAT_ID!);
+
 run().catch(console.error);
 setInterval(() => {
   run().catch(console.error);
