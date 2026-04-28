@@ -102,10 +102,9 @@ async function handlePendingTx(tx: any) {
   txsReceived++;
   if (!tx || typeof tx !== 'object' || typeof tx.input !== 'string') return;
   if (tx.input.length < 10) return;
-  fullTxObjects++;
-
   const to = tx.to?.toLowerCase();
   if (!to || !WATCHED_POOLS.has(to)) return;
+  fullTxObjects++;
 
   const txHash = (tx.hash as string)?.toLowerCase();
   if (!txHash) return;
