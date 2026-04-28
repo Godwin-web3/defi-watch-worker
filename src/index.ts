@@ -114,7 +114,9 @@ async function sendTelegram(alert: any) {
   const url = `https://api.telegram.org/bot${token}/sendMessage`;
   const threatPrefix = alert.threatPrefix || "";
   const header = `🚨 *${threatPrefix}${alert.title.toUpperCase()} ALERT* 🚨`;
-  const text = `${header}\n\nSeverity: ${alert.severity}\nScore: ${alert.actorScore}\nDetails: ${alert.description}\nTX: [View](https://etherscan.io/tx/${alert.txHash})`;
+  const pastEvents = (alert.recentEvents || []).slice(1);
+  const historyBlock = pastEvents.length > 0 ? "\nPrevious Activity:\n" + pastEvents.map((e: any, i: number) => "• " + e.description + " (Block: " + e.blockNumber + ") [TX](https://etherscan.io/tx/" + e.txHash + ")").join("\n") : "";
+  const text = `${header}\n\nSeverity: ${alert.severity}\nScore: ${alert.actorScore}\nDetails: ${alert.description}\nTX: [View](https://etherscan.io/tx/${alert.txHash})${historyBlock}`;
 
   try {
     await fetch(url, {
