@@ -10,10 +10,6 @@ import http from 'http';
 
 import { getTransaction, updateActor, getThreatPrefix, formatActorDescription, calculatePriceImpact, getKV, putKV, supabase, AAVE_ORACLE } from './utils.js';
 import { computeFlowDelta } from './flowTracker.js';
-import { startMempoolMonitor } from './mempool.js';
-import { startAaveMempoolMonitor } from './aave-mempool.js';
-import { startUniswapMempoolMonitor } from './uniswap-mempool.js';
-import { startCurveMempoolMonitor } from './curve-mempool.js';
 import { normalizeAlert } from './alerts.js';
 import { Contract, ZeroAddress } from 'ethers';
 
@@ -197,10 +193,6 @@ async function run() {
 }
 
 console.log('Starting DeFi Watch Worker...');
-startMempoolMonitor();
-startAaveMempoolMonitor();
-startUniswapMempoolMonitor();
-startCurveMempoolMonitor();
 
 run().catch(console.error);
 setInterval(() => {
