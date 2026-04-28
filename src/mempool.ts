@@ -95,3 +95,5 @@ export async function startMempoolMonitor() {
 
   await connect();
 }
+
+export { monitorAaveMempool } from './aave-mempool.js';

@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers';
+import { JsonRpcProvider, WebSocketProvider } from 'ethers';
 import { monitorAave } from './protocols/aave.js';
 import { monitorUniswap } from './protocols/uniswap.js';
 import { monitorCurve } from './protocols/curve.js';
@@ -10,7 +10,7 @@ import http from 'http';
 
 import { getTransaction, updateActor, getThreatPrefix, formatActorDescription, calculatePriceImpact, getKV, putKV, supabase, AAVE_ORACLE } from './utils.js';
 import { computeFlowDelta } from './flowTracker.js';
-import { startMempoolMonitor } from './mempool.js';
+import { startMempoolMonitor, monitorAaveMempool } from './mempool.js';
 import { normalizeAlert } from './alerts.js';
 import { Contract, ZeroAddress } from 'ethers';
 
@@ -175,6 +175,8 @@ async function run() {
 
 console.log('Starting DeFi Watch Worker...');
 startMempoolMonitor();
+const wsProvider = new WebSocketProvider(process.env.WS_RPC_URL!);
+monitorAaveMempool(wsProvider, process.env.TELEGRAM_BOT_TOKEN!, process.env.TELEGRAM_CHAT_ID!);
 run().catch(console.error);
 setInterval(() => {
   run().catch(console.error);
