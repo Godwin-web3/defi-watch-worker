@@ -59,12 +59,13 @@ function deriveConfidence(alert: any): 'HIGH' | 'MEDIUM' | 'LOW' {
 
 function buildAlertContext(alert: any): AlertContext {
   const desc = alert.description || '';
+  const evidence = alert.evidence || {};
   const hfMatch = desc.match(/Health Factor[:\s]+([0-9.]+)/i);
-  const health_factor = hfMatch ? parseFloat(hfMatch[1]) : alert.healthFactor;
+  const health_factor = evidence.healthFactor || (hfMatch ? parseFloat(hfMatch[1]) : alert.healthFactor);
   const ltvMatch = desc.match(/LTV[:\s]+([0-9.]+)%/i);
-  const ltv_percent = ltvMatch ? parseFloat(ltvMatch[1]) : alert.ltv;
+  const ltv_percent = evidence.ltv || (ltvMatch ? parseFloat(ltvMatch[1]) : alert.ltv);
   const borrowMatch = desc.match(/(?:borrow|borrowed|Large borrow)[:\s]+\$?([0-9,.]+)/i);
-  const amount_usd = borrowMatch ? parseFloat(borrowMatch[1].replace(',', '')) : alert.borrowAmountUsd || alert.usdSurplus;
+  const amount_usd = evidence.usdValue || (borrowMatch ? parseFloat(borrowMatch[1].replace(',', '')) : alert.borrowAmountUsd || alert.usdSurplus);
   const title = alert.title || '';
   const confidence = deriveConfidence(alert);
   return {

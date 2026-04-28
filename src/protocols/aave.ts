@@ -97,13 +97,20 @@ export async function monitorAave(env: any, provider: JsonRpcProvider, fromBlock
 
       const actorRecord = await updateActor(initiator, actorPoints, 'Aave FlashLoan', env, log.transactionHash, blockNumber);
 
-      if (isNewContract) {
+      // Fix: Loophole 1 - Catch 'Slow Cook' attacks by checking both contract age and first-time interaction
+      const isFirstTimeInteraction = actorRecord.eventCount === 1;
+      
+      if (isNewContract || isFirstTimeInteraction) {
+        const reason = isNewContract 
+          ? `FlashLoan by new contract (<7 days): ${initiator}` 
+          : `FlashLoan by address with no prior recorded activity: ${initiator}`;
+
         const alert: any = {
           ...baseAlert, id: `${log.transactionHash}-aave-flash`, severity: 'critical', title: 'Aave V3 Suspicious FlashLoan',
           type: 'AAVE_SUSPICIOUS_FLASHLOAN',
-          description: formatActorDescription(`FlashLoan by new contract (<7 days): ${initiator}`, actorRecord),
+          description: formatActorDescription(reason, actorRecord),
           actorScore: actorRecord.score, actorHistoryCount: actorRecord.eventCount, recentEvents: actorRecord.recentEvents, threatPrefix: getThreatPrefix(actorRecord),
-          flashLoanAmount: amount, flashLoanPremium: premium, firstTimeActor: actorRecord.eventCount === 1
+          flashLoanAmount: amount, flashLoanPremium: premium, firstTimeActor: isFirstTimeInteraction
         };
         await handleFlashLoanAlert(alert, initiator, provider, asset, amount, premium);
         alerts.push(alert);

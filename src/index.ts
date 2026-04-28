@@ -45,12 +45,10 @@ async function handleFlashLoanAlert(alert: any, actor: string, provider: JsonRpc
       if (flowResult.classificationTag === 'CONFIRMED_EXTRACTION') {
         alert.severity = 'critical';
         alert.usdSurplus = flowResult.atomicExecutionSurplus;
-        // Persistence is handled within computeFlowDelta or separate logic if needed, 
-        // but here we just update the alert object.
       }
     }
   } catch (e) {
-    console.error('Error in handleFlashLoanAlert:', e);
+    console.error(`[Alert] Flow analysis failed for ${alert.txHash}:`, e);
   }
 }
 
@@ -119,12 +117,17 @@ async function sendTelegram(alert: any) {
   const text = `${header}\n\nSeverity: ${alert.severity}\nScore: ${alert.actorScore}\nDetails: ${alert.description}\nTX: [View](https://etherscan.io/tx/${alert.txHash})${historyBlock}`;
 
   try {
-    await fetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' })
     });
-  } catch (e) {}
+    if (!response.ok) {
+      console.error(`[Alert] Telegram API error: ${response.status} ${response.statusText}`);
+    }
+  } catch (e) {
+    console.error(`[Alert] Failed to send Telegram:`, e);
+  }
 }
 
 async function run() {
@@ -140,42 +143,57 @@ async function run() {
   }
 
   if (fromBlock > currentBlock) return;
-  const toBlock = Math.max(fromBlock, currentBlock - 1);
-  const fromBlockHex = '0x' + fromBlock.toString(16);
-  const toBlockHex = '0x' + toBlock.toString(16);
+  
+  const targetBlock = Math.max(fromBlock, currentBlock - 1);
+  // Process in chunks of 5 blocks to keep it efficient yet robust
+  const CHUNK_SIZE = 5;
 
-  console.log(`Scanning blocks ${fromBlock} to ${toBlock}`);
+  for (let start = fromBlock; start <= targetBlock; start += CHUNK_SIZE) {
+    const end = Math.min(start + CHUNK_SIZE - 1, targetBlock);
+    const fromBlockHex = '0x' + start.toString(16);
+    const toBlockHex = '0x' + end.toString(16);
 
-  const alerts: any[] = [];
-  const activityTracker = new Map<string, number>();
-  const assetsToMonitor = new Set<string>();
-  const now = Date.now();
+    console.log(`Scanning blocks ${start} to ${end}`);
 
-  // Run all protocol monitors
-  await Promise.all([
-    monitorAave({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription, checkContractAge, handleFlashLoanAlert, currentBlock, assetsToMonitor),
-    monitorUniswap({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription, calculatePriceImpact),
-    monitorCurve({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription),
-    monitorMaker({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription),
-    monitorLido({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription)
-  ]);
+    const alerts: any[] = [];
+    const activityTracker = new Map<string, number>();
+    const assetsToMonitor = new Set<string>();
+    const now = Date.now();
 
-  // Oracle Monitor (runs after protocols to use assetsToMonitor)
-  const correlativeAlerts = alerts.filter(a => a.severity === 'critical');
-  await monitorOracle({}, provider, toBlock, now, alerts, assetsToMonitor, 
-    (asset: string) => checkOraclePrice(asset, provider),
-    (asset: string, price: bigint) => checkChainlinkDivergence(asset, price, provider),
-    correlativeAlerts
-  );
+    try {
+      // Run all protocol monitors
+      await Promise.all([
+        monitorAave({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription, checkContractAge, handleFlashLoanAlert, currentBlock, assetsToMonitor),
+        monitorUniswap({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription, calculatePriceImpact),
+        monitorCurve({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription),
+        monitorMaker({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription),
+        monitorLido({}, provider, fromBlockHex, toBlockHex, now, alerts, activityTracker, updateActor, getTransaction, getThreatPrefix, formatActorDescription)
+      ]);
 
-  await saveToSupabase(alerts);
-  for (const alert of alerts) {
-    if (['critical', 'high'].includes(alert.severity)) {
-      await sendTelegram(alert);
+      // Oracle Monitor (runs after protocols to use assetsToMonitor)
+      const correlativeAlerts = alerts.filter(a => a.severity === 'critical');
+      await monitorOracle({}, provider, end, now, alerts, assetsToMonitor, 
+        (asset: string) => checkOraclePrice(asset, provider),
+        (asset: string, price: bigint) => checkChainlinkDivergence(asset, price, provider),
+        correlativeAlerts
+      );
+
+      if (alerts.length > 0) {
+        await saveToSupabase(alerts);
+        for (const alert of alerts) {
+          if (['critical', 'high'].includes(alert.severity)) {
+            await sendTelegram(alert);
+          }
+        }
+      }
+
+      // Checkpoint after successful chunk processing
+      await putKV('last_processed_block', end.toString());
+    } catch (e) {
+      console.error(`[Worker] Critical failure in block range ${start}-${end}:`, e);
+      break; // Exit loop on critical failure to prevent corrupted state
     }
   }
-
-  await putKV('last_processed_block', toBlock.toString());
 }
 
 console.log('Starting DeFi Watch Worker...');
