@@ -175,8 +175,8 @@ async function run() {
 
 console.log('Starting DeFi Watch Worker...');
 startMempoolMonitor();
-const wsProvider = new WebSocketProvider(process.env.WS_RPC_URL!);
-monitorAaveMempool(wsProvider, process.env.TELEGRAM_BOT_TOKEN!, process.env.TELEGRAM_CHAT_ID!);
+const wsProvider = process.env.WS_RPC_URL ? new WebSocketProvider(process.env.WS_RPC_URL) : null;
+if (wsProvider) monitorAaveMempool(wsProvider, process.env.TELEGRAM_BOT_TOKEN!, process.env.TELEGRAM_CHAT_ID!);
 run().catch(console.error);
 setInterval(() => {
   run().catch(console.error);
