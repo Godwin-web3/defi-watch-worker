@@ -12,6 +12,7 @@ import { getTransaction, updateActor, getThreatPrefix, formatActorDescription, c
 import { computeFlowDelta } from './flowTracker.js';
 import { startMempoolMonitor, monitorAaveMempool } from './mempool.js';
 import { startUniswapMempoolMonitor } from './uniswap-mempool.js';
+import { startCurveMempoolMonitor } from './curve-mempool.js';
 import { normalizeAlert } from './alerts.js';
 import { Contract, ZeroAddress } from 'ethers';
 
@@ -177,6 +178,7 @@ async function run() {
 console.log('Starting DeFi Watch Worker...');
 startMempoolMonitor();
 startUniswapMempoolMonitor();
+startCurveMempoolMonitor();
 const wsProvider = process.env.WS_RPC_URL ? new WebSocketProvider(process.env.WS_RPC_URL) : null;
 if (wsProvider) monitorAaveMempool(wsProvider, process.env.TELEGRAM_BOT_TOKEN!, process.env.TELEGRAM_CHAT_ID!);
 run().catch(console.error);
