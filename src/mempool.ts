@@ -65,6 +65,14 @@ export async function startMempoolMonitor() {
   async function connect() {
     try {
       provider = new WebSocketProvider(wsUrl!);
+      const ws = (provider as any).websocket || (provider as any)._websocket;
+      if (ws) {
+        ws.on("error", () => {});
+        ws.on("unexpected-response", (_req: any, res: any) => {
+          console.warn("[mempool] Unexpected response:", res.statusCode);
+          setTimeout(connect, res.statusCode === 429 ? 10000 : 5000);
+        });
+      }
 
       provider.on('pending', async (txHash: string) => {
         try {
