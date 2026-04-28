@@ -10,7 +10,7 @@ async function sendTelegramAlert(token: string, chatId: string, message: string)
   });
 }
 
-const WS_URL = process.env.WS_RPC_URL || 'wss://ethereum-rpc.publicnode.com';
+const WS_URL = process.env.UNISWAP_WS_URL || 'wss://mainnet.infura.io/ws/v3/e32a26716fc84b99bb65a4e1720a6cff';
 const RECONNECT_DELAY_MS   = 5_000;
 const HEALTH_CHECK_MS      = 30_000;
 const SANDWICH_WINDOW_MS   = 12_000;

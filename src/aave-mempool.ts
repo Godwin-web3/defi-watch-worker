@@ -3,7 +3,7 @@ import WebSocket from 'ws';
 import { Interface, JsonRpcProvider } from 'ethers';
 import { AAVE_ORACLE } from './utils.js';
 
-const WS_URL  = process.env.WS_RPC_URL || 'wss://ethereum-rpc.publicnode.com';
+const WS_URL  = process.env.AAVE_WS_URL || 'wss://eth-mainnet.g.alchemy.com/v2/PXbp5-4Rr858sQJlg7IIT';
 const RPC_URL = process.env.RPC_URL    || 'https://ethereum.publicnode.com';
 
 const RECONNECT_DELAY_MS = 5_000;

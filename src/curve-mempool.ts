@@ -2,7 +2,7 @@
 import WebSocket from 'ws';
 import { ethers } from 'ethers';
 
-const WS_URL = process.env.WS_RPC_URL || 'wss://ethereum-rpc.publicnode.com';
+const WS_URL = process.env.CURVE_WS_URL || 'wss://eth.drpc.org';
 const RECONNECT_DELAY_MS  = 5_000;
 const HEALTH_CHECK_MS     = 30_000;
 const IMBALANCE_WINDOW_MS = 12_000; // 1 block
